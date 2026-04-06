@@ -40,17 +40,11 @@
       <option value="SE4">SE4 – Malmö</option>
     </select>
 
-    <label for="minCharge">Minimum batteri (%)</label>
-    <input type="number" id="minCharge" min="5" max="50" value="20" />
+    <label for="floor">Golv-batteri (%)</label>
+    <input type="number" id="floor" min="5" max="50" value="25" />
 
-    <label for="defaultTarget">Normal laddningsmål (%)</label>
-    <input type="number" id="defaultTarget" min="20" max="100" value="50" />
-
-    <label for="chargeRateKw">Laddeffekt (kW)</label>
-    <input type="number" id="chargeRateKw" min="1" max="250" step="0.5" value="11" />
-
-    <label for="batteryCapacityKwh">Batterikapacitet (kWh)</label>
-    <input type="number" id="batteryCapacityKwh" min="10" max="200" step="1" value="75" />
+    <label for="normalTarget">Normal laddningsmål (%)</label>
+    <input type="number" id="normalTarget" min="20" max="100" value="50" />
 
     <div class="toggle-row">
       <span>Automatisk laddning</span>
@@ -94,10 +88,8 @@
         const res = await HomeyAPI.get('/status');
         const s = res.settings || {};
         if (s.area) document.getElementById('area').value = s.area;
-        if (s.minCharge != null) document.getElementById('minCharge').value = s.minCharge;
-        if (s.defaultTarget != null) document.getElementById('defaultTarget').value = s.defaultTarget;
-        if (s.chargeRateKw != null) document.getElementById('chargeRateKw').value = s.chargeRateKw;
-        if (s.batteryCapacityKwh != null) document.getElementById('batteryCapacityKwh').value = s.batteryCapacityKwh;
+        if (s.floor != null) document.getElementById('floor').value = s.floor;
+        if (s.normalTarget != null) document.getElementById('normalTarget').value = s.normalTarget;
         if (s.autoCharge != null) document.getElementById('autoCharge').checked = s.autoCharge;
 
         if (res.nextTrip) {
@@ -114,10 +106,8 @@
     document.getElementById('saveSettings').addEventListener('click', async () => {
       const body = {
         area: document.getElementById('area').value,
-        minCharge: Number(document.getElementById('minCharge').value),
-        defaultTarget: Number(document.getElementById('defaultTarget').value),
-        chargeRateKw: Number(document.getElementById('chargeRateKw').value),
-        batteryCapacityKwh: Number(document.getElementById('batteryCapacityKwh').value),
+        floor: Number(document.getElementById('floor').value),
+        normalTarget: Number(document.getElementById('normalTarget').value),
         autoCharge: document.getElementById('autoCharge').checked,
       };
       try {
