@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tesla Smart Charging – Inställningar</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; background: #f5f5f7; color: #1d1d1f; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+    h2 { font-size: 15px; font-weight: 600; margin: 24px 0 12px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    label { display: block; font-size: 14px; color: #555; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; margin-bottom: 14px; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .toggle-row span { font-size: 15px; }
+    input[type="checkbox"] { width: 40px; height: 22px; accent-color: #007aff; cursor: pointer; }
+    button { background: #007aff; color: white; border: none; border-radius: 10px; padding: 12px 24px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 4px; }
+    button:hover { background: #0066cc; }
+    .btn-danger { background: #ff3b30; margin-top: 8px; }
+    .btn-danger:hover { background: #cc2e24; }
+    #status { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; }
+    #status.ok { background: #d1fae5; color: #065f46; }
+    #status.err { background: #fee2e2; color: #991b1b; }
+    .trip-section { border-top: 1px solid #eee; padding-top: 14px; margin-top: 4px; }
+    .current-trip { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Tesla Smart Charging</h1>
+
+  <div class="card">
+    <h2>Grundinställningar</h2>
+
+    <label for="area">Elområde</label>
+    <select id="area">
+      <option value="SE1">SE1 – Luleå</option>
+      <option value="SE2">SE2 – Sundsvall</option>
+      <option value="SE3" selected>SE3 – Stockholm</option>
+      <option value="SE4">SE4 – Malmö</option>
+    </select>
+
+    <label for="minCharge">Minimum batteri (%)</label>
+    <input type="number" id="minCharge" min="5" max="50" value="20" />
+
+    <label for="defaultTarget">Normal laddningsmål (%)</label>
+    <input type="number" id="defaultTarget" min="20" max="100" value="50" />
+
+    <label for="chargeRateKw">Laddeffekt (kW)</label>
+    <input type="number" id="chargeRateKw" min="1" max="250" step="0.5" value="11" />
+
+    <label for="batteryCapacityKwh">Batterikapacitet (kWh)</label>
+    <input type="number" id="batteryCapacityKwh" min="10" max="200" step="1" value="75" />
+
+    <div class="toggle-row">
+      <span>Automatisk laddning</span>
+      <input type="checkbox" id="autoCharge" checked />
+    </div>
+
+    <button id="saveSettings">Spara inställningar</button>
+  </div>
+
+  <div class="card">
+    <h2>Nästa resa</h2>
+    <div id="currentTrip" class="current-trip" style="display:none"></div>
+
+    <div class="trip-section">
+      <label for="departureTime">Avgångstid</label>
+      <input type="datetime-local" id="departureTime" />
+
+      <label for="tripTarget">Mål-batteri (%)</label>
+      <input type="number" id="tripTarget" min="20" max="100" value="80" />
+
+      <button id="saveTrip">Sätt resa</button>
+      <button id="clearTrip" class="btn-danger">Radera resa</button>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <script>
+    const { HomeyAPI } = window;
+
+    function showStatus(msg, isError) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = isError ? 'err' : 'ok';
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await HomeyAPI.get('/status');
+        const s = res.settings || {};
+        if (s.area) document.getElementById('area').value = s.area;
+        if (s.minCharge != null) document.getElementById('minCharge').value = s.minCharge;
+        if (s.defaultTarget != null) document.getElementById('defaultTarget').value = s.defaultTarget;
+        if (s.chargeRateKw != null) document.getElementById('chargeRateKw').value = s.chargeRateKw;
+        if (s.batteryCapacityKwh != null) document.getElementById('batteryCapacityKwh').value = s.batteryCapacityKwh;
+        if (s.autoCharge != null) document.getElementById('autoCharge').checked = s.autoCharge;
+
+        if (res.nextTrip) {
+          const dep = new Date(res.nextTrip.departureTime);
+          const el = document.getElementById('currentTrip');
+          el.textContent = `Aktiv resa: ${dep.toLocaleString('sv-SE')} – mål ${res.nextTrip.targetPercent}%`;
+          el.style.display = 'block';
+        }
+      } catch (e) {
+        showStatus('Kunde inte hämta inställningar: ' + e.message, true);
+      }
+    }
+
+    document.getElementById('saveSettings').addEventListener('click', async () => {
+      const body = {
+        area: document.getElementById('area').value,
+        minCharge: Number(document.getElementById('minCharge').value),
+        defaultTarget: Number(document.getElementById('defaultTarget').value),
+        chargeRateKw: Number(document.getElementById('chargeRateKw').value),
+        batteryCapacityKwh: Number(document.getElementById('batteryCapacityKwh').value),
+        autoCharge: document.getElementById('autoCharge').checked,
+      };
+      try {
+        await HomeyAPI.post('/settings', body);
+        showStatus('Inställningar sparade!', false);
+      } catch (e) {
+        showStatus('Fel: ' + e.message, true);
+      }
+    });
+
+    document.getElementById('saveTrip').addEventListener('click', async () => {
+      const departureTime = document.getElementById('departureTime').value;
+      const targetPercent = Number(document.getElementById('tripTarget').value);
+      if (!departureTime) { showStatus('Ange avgångstid', true); return; }
+      try {
+        await HomeyAPI.post('/trip', { departureTime, targetPercent });
+        showStatus('Resa sparad!', false);
+        loadSettings();
+      } catch (e) {
+        showStatus('Fel: ' + e.message, true);
+      }
+    });
+
+    document.getElementById('clearTrip').addEventListener('click', async () => {
+      try {
+        await HomeyAPI.delete('/trip');
+        document.getElementById('currentTrip').style.display = 'none';
+        showStatus('Resa raderad', false);
+      } catch (e) {
+        showStatus('Fel: ' + e.message, true);
+      }
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>

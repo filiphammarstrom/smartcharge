@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "Tesla Smart Charging",
+    "description": "Intelligent Tesla-laddning baserat på elpriser"
+  },
+  "flow": {
+    "triggers": {
+      "cheap_charging_started": {
+        "title": "Billig laddningsstund börjar"
+      },
+      "cheap_charging_ended": {
+        "title": "Billig laddningsstund slutar"
+      },
+      "emergency_charging_activated": {
+        "title": "Nödladdning aktiverad (batteri lågt)"
+      }
+    },
+    "conditions": {
+      "is_cheap_electricity": {
+        "title": "Det är !{{billig|dyr}} el just nu"
+      }
+    },
+    "actions": {
+      "set_next_trip": {
+        "title": "Sätt nästa resa",
+        "args": {
+          "departureTime": "Avgångstid",
+          "targetPercent": "Mål-batteri %"
+        }
+      }
+    }
+  }
+}

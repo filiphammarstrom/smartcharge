@@ -1,0 +1,119 @@
+{
+  "id": "com.filiphammarstrom.teslacharging",
+  "version": "1.0.0",
+  "compatibility": ">=5.0.0",
+  "sdk": 3,
+  "name": {
+    "en": "Tesla Smart Charging",
+    "sv": "Tesla Smart Charging"
+  },
+  "description": {
+    "en": "Intelligent Tesla charging based on electricity prices",
+    "sv": "Intelligent Tesla-laddning baserat på elpriser"
+  },
+  "category": "energy",
+  "permissions": [
+    "homey:manager:api",
+    "homey:app:com.tesla.car"
+  ],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png"
+  },
+  "author": {
+    "name": "Filip Hammarstrom",
+    "email": "filip@filiphammarstrom.se"
+  },
+  "api": {
+    "routes": [
+      {
+        "path": "/status",
+        "method": "GET",
+        "public": false
+      },
+      {
+        "path": "/prices",
+        "method": "GET",
+        "public": false
+      },
+      {
+        "path": "/trip",
+        "method": "POST",
+        "public": false
+      },
+      {
+        "path": "/trip",
+        "method": "DELETE",
+        "public": false
+      },
+      {
+        "path": "/settings",
+        "method": "POST",
+        "public": false
+      }
+    ]
+  },
+  "flow": {
+    "triggers": [
+      {
+        "id": "cheap_charging_started",
+        "title": {
+          "en": "Cheap charging window started",
+          "sv": "Billig laddningsstund börjar"
+        }
+      },
+      {
+        "id": "cheap_charging_ended",
+        "title": {
+          "en": "Cheap charging window ended",
+          "sv": "Billig laddningsstund slutar"
+        }
+      },
+      {
+        "id": "emergency_charging_activated",
+        "title": {
+          "en": "Emergency charging activated (battery low)",
+          "sv": "Nödladdning aktiverad (batteri lågt)"
+        }
+      }
+    ],
+    "conditions": [
+      {
+        "id": "is_cheap_electricity",
+        "title": {
+          "en": "It is !{{cheap|expensive}} electricity right now",
+          "sv": "Det är !{{billig|dyr}} el just nu"
+        }
+      }
+    ],
+    "actions": [
+      {
+        "id": "set_next_trip",
+        "title": {
+          "en": "Set next trip",
+          "sv": "Sätt nästa resa"
+        },
+        "args": [
+          {
+            "name": "departureTime",
+            "type": "datetime",
+            "title": {
+              "en": "Departure time",
+              "sv": "Avgångstid"
+            }
+          },
+          {
+            "name": "targetPercent",
+            "type": "number",
+            "title": {
+              "en": "Target battery %",
+              "sv": "Mål-batteri %"
+            },
+            "min": 20,
+            "max": 100
+          }
+        ]
+      }
+    ]
+  }
+}
