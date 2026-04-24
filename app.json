@@ -26,33 +26,11 @@
     "email": "filip@filiphammarstrom.se"
   },
   "api": {
-    "routes": [
-      {
-        "path": "/status",
-        "method": "GET",
-        "public": false
-      },
-      {
-        "path": "/prices",
-        "method": "GET",
-        "public": false
-      },
-      {
-        "path": "/trip",
-        "method": "POST",
-        "public": false
-      },
-      {
-        "path": "/trip",
-        "method": "DELETE",
-        "public": false
-      },
-      {
-        "path": "/settings",
-        "method": "POST",
-        "public": false
-      }
-    ]
+    "getStatus":    { "method": "GET",    "path": "/status"   },
+    "getPrices":    { "method": "GET",    "path": "/prices"   },
+    "postTrip":     { "method": "POST",   "path": "/trip"     },
+    "deleteTrip":   { "method": "DELETE", "path": "/trip"     },
+    "postSettings": { "method": "POST",   "path": "/settings" }
   },
   "flow": {
     "triggers": [

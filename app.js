@@ -27,7 +27,6 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastChargeSetAt = null;
 
     this._registerFlowCards();
-    this._registerApiRoutes();
     this._restoreTrip();
 
     await this._logTeslaDevices();
@@ -228,76 +227,74 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   // ---------------------------------------------------------------------------
-  // Webhook API
+  // API handlers – called from api.js (Homey SDK 3 pattern)
   // ---------------------------------------------------------------------------
 
-  _registerApiRoutes() {
-    this.homey.api.registerGetHandler('/status', async () => {
-      const settings = this._getSettings();
-      let battery = null;
-      try { battery = await this._getTeslaBattery(); } catch (_) {}
-      return {
-        battery,
-        teslaStatus: {
-          carFound: this._teslaCarFound,
-          batteryDeviceFound: this._teslaBatFound,
-          lastChargeSet: this._lastChargeSet,
-          lastChargeSetAt: this._lastChargeSetAt,
-        },
-        lastDecision: this._lastDecision,
-        nextTrip: this._nextTrip
-          ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent }
-          : null,
-        settings,
-      };
-    });
+  async apiGetStatus() {
+    const settings = this._getSettings();
+    let battery = null;
+    try { battery = await this._getTeslaBattery(); } catch (_) {}
+    return {
+      battery,
+      teslaStatus: {
+        carFound: this._teslaCarFound,
+        batteryDeviceFound: this._teslaBatFound,
+        lastChargeSet: this._lastChargeSet,
+        lastChargeSetAt: this._lastChargeSetAt,
+      },
+      lastDecision: this._lastDecision,
+      nextTrip: this._nextTrip
+        ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent }
+        : null,
+      settings,
+    };
+  }
 
-    this.homey.api.registerGetHandler('/prices', async () => {
-      const settings = this._getSettings();
-      const [prices, avg] = await Promise.all([
-        this._priceManager.getFuturePrices(settings.area),
-        this._priceManager.get5DayAverage(settings.area),
-      ]);
-      return {
-        avg5day: avg,
-        prices: prices.map(p => ({
-          time_start: p.time_start.toISOString(),
-          time_end: p.time_end.toISOString(),
-          price: p.price,
-          tier: this._priceManager.classifyPrice(p.price, avg),
-          current: this._priceManager.isCurrentSlot(p),
-        })),
-      };
-    });
+  async apiGetPrices() {
+    const settings = this._getSettings();
+    const [prices, avg] = await Promise.all([
+      this._priceManager.getFuturePrices(settings.area),
+      this._priceManager.get5DayAverage(settings.area),
+    ]);
+    return {
+      avg5day: avg,
+      prices: prices.map(p => ({
+        time_start: p.time_start.toISOString(),
+        time_end: p.time_end.toISOString(),
+        price: p.price,
+        tier: this._priceManager.classifyPrice(p.price, avg),
+        current: this._priceManager.isCurrentSlot(p),
+      })),
+    };
+  }
 
-    this.homey.api.registerPostHandler('/trip', async body => {
-      const { departureTime, targetPercent } = body;
-      if (!departureTime || targetPercent == null) throw new Error('departureTime and targetPercent required');
-      const dep = new Date(departureTime);
-      if (isNaN(dep.getTime())) throw new Error('Invalid departureTime');
-      const pct = Number(targetPercent);
-      if (pct < 20 || pct > 100) throw new Error('targetPercent must be 20–100');
-      this._setTrip(dep, pct);
-      this._runScheduler().catch(e => this.error(e));
-      return { ok: true, trip: { departureTime: dep.toISOString(), targetPercent: pct } };
-    });
+  async apiPostTrip(body) {
+    const { departureTime, targetPercent } = body;
+    if (!departureTime || targetPercent == null) throw new Error('departureTime and targetPercent required');
+    const dep = new Date(departureTime);
+    if (isNaN(dep.getTime())) throw new Error('Invalid departureTime');
+    const pct = Number(targetPercent);
+    if (pct < 20 || pct > 100) throw new Error('targetPercent must be 20–100');
+    this._setTrip(dep, pct);
+    this._runScheduler().catch(e => this.error(e));
+    return { ok: true, trip: { departureTime: dep.toISOString(), targetPercent: pct } };
+  }
 
-    this.homey.api.registerDeleteHandler('/trip', async () => {
-      this._nextTrip = null;
-      this.homey.settings.set('nextTrip', null);
-      this._runScheduler().catch(e => this.error(e));
-      return { ok: true };
-    });
+  async apiDeleteTrip() {
+    this._nextTrip = null;
+    this.homey.settings.set('nextTrip', null);
+    this._runScheduler().catch(e => this.error(e));
+    return { ok: true };
+  }
 
-    this.homey.api.registerPostHandler('/settings', async body => {
-      const allowed = ['area', 'floor', 'normalTarget', 'autoCharge'];
-      const current = this._getSettings();
-      for (const key of allowed) {
-        if (body[key] !== undefined) current[key] = body[key];
-      }
-      this.homey.settings.set('appSettings', current);
-      return { ok: true, settings: current };
-    });
+  async apiPostSettings(body) {
+    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge'];
+    const current = this._getSettings();
+    for (const key of allowed) {
+      if (body[key] !== undefined) current[key] = body[key];
+    }
+    this.homey.settings.set('appSettings', current);
+    return { ok: true, settings: current };
   }
 
   // ---------------------------------------------------------------------------
