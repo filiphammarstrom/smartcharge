@@ -216,7 +216,9 @@ class TeslaSmartChargingApp extends Homey.App {
     this.homey.flow
       .getActionCard('set_next_trip')
       .registerRunListener(async args => {
-        this._setTrip(new Date(args.departureTime), args.targetPercent);
+        // args.departureDate = "YYYY-MM-DD", args.departureTime = "HH:MM"
+        const dep = new Date(`${args.departureDate}T${args.departureTime}:00`);
+        this._setTrip(dep, args.targetPercent);
         await this._runScheduler();
       });
   }

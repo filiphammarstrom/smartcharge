@@ -11,6 +11,7 @@
     "en": "Intelligent Tesla charging based on electricity prices",
     "sv": "Intelligent Tesla-laddning baserat på elpriser"
   },
+  "brandColor": "#1a1a1a",
   "category": "energy",
   "permissions": [
     "homey:manager:api",
@@ -95,8 +96,16 @@
         },
         "args": [
           {
+            "name": "departureDate",
+            "type": "date",
+            "title": {
+              "en": "Departure date",
+              "sv": "Avgångsdatum"
+            }
+          },
+          {
             "name": "departureTime",
-            "type": "datetime",
+            "type": "time",
             "title": {
               "en": "Departure time",
               "sv": "Avgångstid"
