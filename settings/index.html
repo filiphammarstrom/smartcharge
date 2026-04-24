@@ -24,10 +24,26 @@
     #status.err { background: #fee2e2; color: #991b1b; }
     .trip-section { border-top: 1px solid #eee; padding-top: 14px; margin-top: 4px; }
     .current-trip { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
+
+    /* Tesla status block */
+    .tesla-status { border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; }
+    .tesla-status.connected { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
+    .tesla-status.disconnected { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    .tesla-status.loading { background: #f3f4f6; border: 1px solid #d1d5db; color: #6b7280; }
+    .tesla-status .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .tesla-status .label { font-weight: 500; }
+    .tesla-status .decision { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.08); }
+    .tier-badge { display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 12px; font-weight: 600; }
+    .tier-VERY_CHEAP { background: #dcfce7; color: #15803d; }
+    .tier-CHEAP      { background: #d1fae5; color: #065f46; }
+    .tier-OK         { background: #fef3c7; color: #92400e; }
+    .tier-EXPENSIVE  { background: #fee2e2; color: #991b1b; }
   </style>
 </head>
 <body>
   <h1>Tesla Smart Charging</h1>
+
+  <div id="teslaStatus" class="tesla-status loading">Laddar status…</div>
 
   <div class="card">
     <h2>Grundinställningar</h2>
@@ -75,12 +91,60 @@
   <script>
     const { HomeyAPI } = window;
 
+    const TIER_LABELS = {
+      VERY_CHEAP: 'Mycket billig',
+      CHEAP: 'Billig',
+      OK: 'OK',
+      EXPENSIVE: 'Dyr',
+    };
+
     function showStatus(msg, isError) {
       const el = document.getElementById('status');
       el.textContent = msg;
       el.className = isError ? 'err' : 'ok';
       el.style.display = 'block';
       setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    function renderTeslaStatus(res) {
+      const el = document.getElementById('teslaStatus');
+      const ts = res.teslaStatus || {};
+      const carOk = ts.carFound;
+      const batOk = ts.batteryDeviceFound;
+      const fullyConnected = carOk && batOk;
+
+      el.className = 'tesla-status ' + (fullyConnected ? 'connected' : 'disconnected');
+
+      let html = `
+        <div class="row">
+          <span class="label">${fullyConnected ? '🟢 Tesla ansluten' : '🔴 Tesla ej ansluten'}</span>
+          <span>Batteri: ${res.battery != null ? res.battery + '%' : '–'}</span>
+        </div>
+        <div class="row">
+          <span>Bilenhet (measure_battery): ${carOk ? '✓' : '✗ saknas'}</span>
+          <span>Laddningsenhet (charging_on): ${batOk ? '✓' : '✗ saknas'}</span>
+        </div>`;
+
+      if (!fullyConnected) {
+        html += `<div style="margin-top:6px;font-size:13px;">
+          Kontrollera loggarna i Homey-appen för att se vilka capabilities Tesla-enheterna exponerar.
+        </div>`;
+      }
+
+      const d = res.lastDecision;
+      if (d) {
+        const tier = d.priceTier || '–';
+        const tierLabel = TIER_LABELS[tier] || tier;
+        const action = d.shouldCharge ? 'Laddar' : 'Laddar inte';
+        const updatedAt = d.updatedAt ? new Date(d.updatedAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '–';
+        html += `<div class="decision">
+          <span class="tier-badge tier-${tier}">${tierLabel}</span>
+          &nbsp;${action} → mål ${d.target}% &nbsp;·&nbsp; batteri ${d.currentBattery}% &nbsp;·&nbsp; ${updatedAt}
+          <br><span style="font-size:12px;opacity:0.7;">${d.reason || ''}</span>
+        </div>`;
+      }
+
+      el.innerHTML = html;
     }
 
     async function loadSettings() {
@@ -92,6 +156,8 @@
         if (s.normalTarget != null) document.getElementById('normalTarget').value = s.normalTarget;
         if (s.autoCharge != null) document.getElementById('autoCharge').checked = s.autoCharge;
 
+        renderTeslaStatus(res);
+
         if (res.nextTrip) {
           const dep = new Date(res.nextTrip.departureTime);
           const el = document.getElementById('currentTrip');
@@ -99,6 +165,9 @@
           el.style.display = 'block';
         }
       } catch (e) {
+        const el = document.getElementById('teslaStatus');
+        el.className = 'tesla-status disconnected';
+        el.textContent = 'Kunde inte hämta status: ' + e.message;
         showStatus('Kunde inte hämta inställningar: ' + e.message, true);
       }
     }

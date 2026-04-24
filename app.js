@@ -21,10 +21,16 @@ class TeslaSmartChargingApp extends Homey.App {
     this._nextTrip = null;
     this._lastCharging = null;
     this._lastDecision = null;
+    this._teslaCarFound = false;
+    this._teslaBatFound = false;
+    this._lastChargeSet = null;
+    this._lastChargeSetAt = null;
 
     this._registerFlowCards();
     this._registerApiRoutes();
     this._restoreTrip();
+
+    await this._logTeslaDevices();
 
     // Clear price cache at midnight
     this.homey.setInterval(() => {
@@ -83,11 +89,12 @@ class TeslaSmartChargingApp extends Homey.App {
     });
 
     const decision = scheduler.decide();
+    const priceStr = currentSlot ? currentSlot.price.toFixed(4) : 'n/a';
+    const avgStr = avg5day ? avg5day.toFixed(4) : 'n/a';
+    const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : 'n/a';
     this.log(
-      `Decision: shouldCharge=${decision.shouldCharge}, target=${decision.target}%, ` +
-      `battery=${currentBattery}%, reason=${decision.reason}, ` +
-      `price=${currentSlot ? currentSlot.price.toFixed(4) : 'n/a'} SEK/kWh, ` +
-      `5d-avg=${avg5day ? avg5day.toFixed(4) : 'n/a'}`
+      `[Scheduler] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
+      `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
     );
 
     try {
@@ -113,48 +120,75 @@ class TeslaSmartChargingApp extends Homey.App {
       ...decision,
       currentBattery,
       currentPrice: currentSlot ? currentSlot.price : null,
+      priceTier: tier,
       avg5day,
       updatedAt: new Date().toISOString(),
     };
   }
 
   // ---------------------------------------------------------------------------
-  // Tesla device
+  // Tesla device – find by capability, not by driverId
   // ---------------------------------------------------------------------------
 
   // App: "Tesla bil och energi" by Ronny Winkler (com.tesla.car)
-  // Car driver:     measure_battery (read battery %)
-  // Battery driver: charging_on (start/stop charging)
+  // We search by capability to be agnostic of internal driver naming.
+
+  async _findTeslaDevice(capability) {
+    const devices = await this.homey.devices.getDevices();
+    return Object.values(devices).find(
+      d => d.driverUri
+        && d.driverUri.includes('com.tesla.car')
+        && d.capabilitiesObj
+        && capability in d.capabilitiesObj
+    ) || null;
+  }
 
   async _getTeslaCarDevice() {
-    const devices = await this.homey.devices.getDevices();
-    const car = Object.values(devices).find(
-      d => d.driverUri && d.driverUri.includes('com.tesla.car') && d.driverId === 'car'
-    );
-    if (!car) throw new Error('No Tesla car device found (com.tesla.car / driver: car)');
-    return car;
+    const dev = await this._findTeslaDevice('measure_battery');
+    this._teslaCarFound = dev !== null;
+    if (!dev) throw new Error('Ingen Tesla-enhet med measure_battery hittades (com.tesla.car)');
+    return dev;
   }
 
   async _getTeslaBatteryDevice() {
-    const devices = await this.homey.devices.getDevices();
-    const bat = Object.values(devices).find(
-      d => d.driverUri && d.driverUri.includes('com.tesla.car') && d.driverId === 'battery'
-    );
-    if (!bat) throw new Error('No Tesla battery device found (com.tesla.car / driver: battery)');
-    return bat;
+    const dev = await this._findTeslaDevice('charging_on');
+    this._teslaBatFound = dev !== null;
+    if (!dev) throw new Error('Ingen Tesla-enhet med charging_on hittades (com.tesla.car)');
+    return dev;
   }
 
   async _getTeslaBattery() {
     const car = await this._getTeslaCarDevice();
     const cap = car.capabilitiesObj && car.capabilitiesObj['measure_battery'];
-    if (!cap) throw new Error('measure_battery capability not found on Tesla car device');
+    if (!cap) throw new Error('measure_battery capability saknas på Tesla-bilenheten');
     return cap.value;
   }
 
   async _setTeslaCharging(enabled) {
     const bat = await this._getTeslaBatteryDevice();
     await bat.setCapabilityValue('charging_on', enabled);
-    this.log(`Tesla charging_on set to: ${enabled}`);
+    this._lastChargeSet = enabled;
+    this._lastChargeSetAt = new Date().toISOString();
+    this.log(`Tesla charging_on satt till: ${enabled}`);
+  }
+
+  async _logTeslaDevices() {
+    try {
+      const devices = await this.homey.devices.getDevices();
+      const teslaDevices = Object.values(devices).filter(
+        d => d.driverUri && d.driverUri.includes('com.tesla.car')
+      );
+      if (teslaDevices.length === 0) {
+        this.log('[Tesla] Inga enheter från com.tesla.car hittades i Homey');
+        return;
+      }
+      for (const d of teslaDevices) {
+        const caps = d.capabilitiesObj ? Object.keys(d.capabilitiesObj).join(', ') : '(inga)';
+        this.log(`[Tesla] Enhet: "${d.name}" | driverId: ${d.driverId} | capabilities: ${caps}`);
+      }
+    } catch (e) {
+      this.error('[Tesla] Kunde inte lista enheter:', e.message);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -202,6 +236,12 @@ class TeslaSmartChargingApp extends Homey.App {
       try { battery = await this._getTeslaBattery(); } catch (_) {}
       return {
         battery,
+        teslaStatus: {
+          carFound: this._teslaCarFound,
+          batteryDeviceFound: this._teslaBatFound,
+          lastChargeSet: this._lastChargeSet,
+          lastChargeSetAt: this._lastChargeSetAt,
+        },
         lastDecision: this._lastDecision,
         nextTrip: this._nextTrip
           ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent }
