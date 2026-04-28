@@ -181,6 +181,32 @@ class TeslaSmartChargingApp extends Homey.App {
     this.log('[Debug] this.homey.devices:', typeof this.homey.devices, this.homey.devices == null ? '(null/undefined)' : '(exists)');
     this.log('[Debug] this.homey.drivers:', typeof this.homey.drivers, this.homey.drivers == null ? '(null/undefined)' : '(exists)');
 
+    // Inspect drivers manager
+    if (this.homey.drivers) {
+      const driverMethods = [
+        ...Object.getOwnPropertyNames(this.homey.drivers),
+        ...Object.getOwnPropertyNames(Object.getPrototypeOf(this.homey.drivers) || {}),
+      ].filter((v, i, a) => a.indexOf(v) === i && typeof this.homey.drivers[v] === 'function').sort();
+      this.log('[Debug] this.homey.drivers methods:', driverMethods.join(', '));
+
+      try {
+        const drivers = await this.homey.drivers.getDrivers();
+        const driverList = Object.values(drivers).map(d => `${d.id}(app:${d.appId || '?'})`).join(', ');
+        this.log('[Debug] drivers found:', driverList || '(none)');
+      } catch (e) {
+        this.log('[Debug] drivers.getDrivers() failed:', e.message);
+      }
+    }
+
+    // Inspect apps manager
+    if (this.homey.apps) {
+      const appMethods = [
+        ...Object.getOwnPropertyNames(this.homey.apps),
+        ...Object.getOwnPropertyNames(Object.getPrototypeOf(this.homey.apps) || {}),
+      ].filter((v, i, a) => a.indexOf(v) === i && typeof this.homey.apps[v] === 'function').sort();
+      this.log('[Debug] this.homey.apps methods:', appMethods.join(', '));
+    }
+
     try {
       const devices = await this.homey.devices.getDevices();
       const teslaDevices = Object.values(devices).filter(
