@@ -172,6 +172,15 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async _logTeslaDevices() {
+    // Log what's available on this.homey so we can diagnose SDK3 device access
+    const homeyKeys = [
+      ...Object.getOwnPropertyNames(this.homey),
+      ...Object.getOwnPropertyNames(Object.getPrototypeOf(this.homey) || {}),
+    ].filter((v, i, a) => a.indexOf(v) === i).sort();
+    this.log('[Debug] this.homey properties:', homeyKeys.join(', '));
+    this.log('[Debug] this.homey.devices:', typeof this.homey.devices, this.homey.devices == null ? '(null/undefined)' : '(exists)');
+    this.log('[Debug] this.homey.drivers:', typeof this.homey.drivers, this.homey.drivers == null ? '(null/undefined)' : '(exists)');
+
     try {
       const devices = await this.homey.devices.getDevices();
       const teslaDevices = Object.values(devices).filter(
