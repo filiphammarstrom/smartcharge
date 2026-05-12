@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   apiKey: '',
   carRangeKm: 400,
   chargerKw: 11,
-  batteryKwh: 75,
+  batteryKwh: 82,
 };
 
 // Calculates target battery % from trip distance.
