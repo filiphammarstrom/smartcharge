@@ -67,6 +67,10 @@
       <input type="checkbox" id="autoCharge" checked />
     </div>
 
+    <label for="apiKey">Anthropic API-nyckel (för AI-styrning)</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" />
+    <div id="aiStatus" style="font-size:13px;margin-bottom:14px;color:#555;"></div>
+
     <button id="saveSettings">Spara inställningar</button>
   </div>
 
@@ -155,6 +159,15 @@
         if (s.floor != null) document.getElementById('floor').value = s.floor;
         if (s.normalTarget != null) document.getElementById('normalTarget').value = s.normalTarget;
         if (s.autoCharge != null) document.getElementById('autoCharge').checked = s.autoCharge;
+        // Don't prefill the password field — server returns '••••••••' if key exists
+        const aiEl = document.getElementById('aiStatus');
+        if (res.aiEnabled) {
+          aiEl.textContent = '✓ AI-styrning aktiv';
+          aiEl.style.color = '#065f46';
+        } else {
+          aiEl.textContent = 'Ingen nyckel – regelbaserad styrning används';
+          aiEl.style.color = '#92400e';
+        }
 
         renderTeslaStatus(res);
 
@@ -179,9 +192,13 @@
         normalTarget: Number(document.getElementById('normalTarget').value),
         autoCharge: document.getElementById('autoCharge').checked,
       };
+      const apiKeyVal = document.getElementById('apiKey').value.trim();
+      if (apiKeyVal) body.apiKey = apiKeyVal;
       try {
         await HomeyAPI.post('/settings', body);
+        document.getElementById('apiKey').value = '';
         showStatus('Inställningar sparade!', false);
+        loadSettings();
       } catch (e) {
         showStatus('Fel: ' + e.message, true);
       }

@@ -1,0 +1,8 @@
+{
+  "name": "com.filiphammarstrom.teslacharging",
+  "version": "1.0.0",
+  "main": "app.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "*"
+  }
+}

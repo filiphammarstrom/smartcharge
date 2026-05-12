@@ -3,12 +3,14 @@
 const Homey = require('homey');
 const PriceManager = require('./lib/PriceManager');
 const { Scheduler } = require('./lib/Scheduler');
+const AIDecider = require('./lib/AIDecider');
 
 const DEFAULT_SETTINGS = {
   area: 'SE3',
   floor: 25,
   normalTarget: 50,
   autoCharge: true,
+  apiKey: '',
 };
 
 const INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
@@ -76,25 +78,42 @@ class TeslaSmartChargingApp extends Homey.App {
       return;
     }
 
-    const scheduler = new Scheduler({
-      currentBattery,
-      floor: settings.floor,
-      normalTarget: settings.normalTarget,
-      nextTrip: this._nextTrip,
-      currentSlot,
-      avg5day,
-      futurePrices,
-      priceManager: this._priceManager,
-    });
-
-    const decision = scheduler.decide();
+    let decision;
     const priceStr = currentSlot ? currentSlot.price.toFixed(4) : 'n/a';
     const avgStr = avg5day ? avg5day.toFixed(4) : 'n/a';
     const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : 'n/a';
-    this.log(
-      `[Scheduler] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
-      `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
-    );
+
+    if (settings.apiKey) {
+      try {
+        const ai = new AIDecider({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
+        decision = await ai.decide({ currentBattery, floor: settings.floor, normalTarget: settings.normalTarget, nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices });
+        this.log(
+          `[AI] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
+          `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
+        );
+      } catch (e) {
+        this.error('[AI] Beslut misslyckades, faller tillbaka på regelbaserad scheduler:', e.message);
+        decision = null;
+      }
+    }
+
+    if (!decision) {
+      const scheduler = new Scheduler({
+        currentBattery,
+        floor: settings.floor,
+        normalTarget: settings.normalTarget,
+        nextTrip: this._nextTrip,
+        currentSlot,
+        avg5day,
+        futurePrices,
+        priceManager: this._priceManager,
+      });
+      decision = scheduler.decide();
+      this.log(
+        `[Scheduler] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
+        `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
+      );
+    }
 
     try {
       await this._setTeslaCharging(decision.shouldCharge);
@@ -128,9 +147,6 @@ class TeslaSmartChargingApp extends Homey.App {
   // ---------------------------------------------------------------------------
   // Tesla device – find by capability, not by driverId
   // ---------------------------------------------------------------------------
-
-  // App: "Tesla bil och energi" by Ronny Winkler (com.tesla.car)
-  // We search by capability to be agnostic of internal driver naming.
 
   async _findTeslaDevice(capability) {
     const devices = await this.homey.devices.getDevices();
@@ -172,40 +188,7 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async _logTeslaDevices() {
-    // Log what's available on this.homey so we can diagnose SDK3 device access
-    const homeyKeys = [
-      ...Object.getOwnPropertyNames(this.homey),
-      ...Object.getOwnPropertyNames(Object.getPrototypeOf(this.homey) || {}),
-    ].filter((v, i, a) => a.indexOf(v) === i).sort();
-    this.log('[Debug] this.homey properties:', homeyKeys.join(', '));
     this.log('[Debug] this.homey.devices:', typeof this.homey.devices, this.homey.devices == null ? '(null/undefined)' : '(exists)');
-    this.log('[Debug] this.homey.drivers:', typeof this.homey.drivers, this.homey.drivers == null ? '(null/undefined)' : '(exists)');
-
-    // Inspect drivers manager
-    if (this.homey.drivers) {
-      const driverMethods = [
-        ...Object.getOwnPropertyNames(this.homey.drivers),
-        ...Object.getOwnPropertyNames(Object.getPrototypeOf(this.homey.drivers) || {}),
-      ].filter((v, i, a) => a.indexOf(v) === i && typeof this.homey.drivers[v] === 'function').sort();
-      this.log('[Debug] this.homey.drivers methods:', driverMethods.join(', '));
-
-      try {
-        const drivers = await this.homey.drivers.getDrivers();
-        const driverList = Object.values(drivers).map(d => `${d.id}(app:${d.appId || '?'})`).join(', ');
-        this.log('[Debug] drivers found:', driverList || '(none)');
-      } catch (e) {
-        this.log('[Debug] drivers.getDrivers() failed:', e.message);
-      }
-    }
-
-    // Inspect apps manager
-    if (this.homey.apps) {
-      const appMethods = [
-        ...Object.getOwnPropertyNames(this.homey.apps),
-        ...Object.getOwnPropertyNames(Object.getPrototypeOf(this.homey.apps) || {}),
-      ].filter((v, i, a) => a.indexOf(v) === i && typeof this.homey.apps[v] === 'function').sort();
-      this.log('[Debug] this.homey.apps methods:', appMethods.join(', '));
-    }
 
     try {
       const devices = await this.homey.devices.getDevices();
@@ -250,7 +233,6 @@ class TeslaSmartChargingApp extends Homey.App {
     this.homey.flow
       .getActionCard('set_next_trip')
       .registerRunListener(async args => {
-        // args.departureDate = "YYYY-MM-DD", args.departureTime = "HH:MM"
         const dep = new Date(`${args.departureDate}T${args.departureTime}:00`);
         this._setTrip(dep, args.targetPercent);
         await this._runScheduler();
@@ -267,6 +249,7 @@ class TeslaSmartChargingApp extends Homey.App {
 
   async apiGetStatus() {
     const settings = this._getSettings();
+    const safeSettings = { ...settings, apiKey: settings.apiKey ? '••••••••' : '' };
     let battery = null;
     try { battery = await this._getTeslaBattery(); } catch (_) {}
     return {
@@ -281,7 +264,8 @@ class TeslaSmartChargingApp extends Homey.App {
       nextTrip: this._nextTrip
         ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent }
         : null,
-      settings,
+      settings: safeSettings,
+      aiEnabled: Boolean(settings.apiKey),
     };
   }
 
@@ -323,13 +307,13 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async apiPostSettings(body) {
-    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge'];
+    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey'];
     const current = this._getSettings();
     for (const key of allowed) {
       if (body[key] !== undefined) current[key] = body[key];
     }
     this.homey.settings.set('appSettings', current);
-    return { ok: true, settings: current };
+    return { ok: true, settings: { ...current, apiKey: current.apiKey ? '••••••••' : '' } };
   }
 
   // ---------------------------------------------------------------------------
