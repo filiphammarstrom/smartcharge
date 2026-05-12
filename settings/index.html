@@ -65,10 +65,16 @@
     <label for="normalTarget">Normalmål — hålls nära detta i vardagen (%)</label>
     <input type="number" id="normalTarget" min="20" max="100" value="50" />
 
+    <label for="chargerKw">Laddeffekt hemma (kW)</label>
+    <input type="number" id="chargerKw" min="1" max="22" step="0.1" value="11" />
+
+    <label for="batteryKwh">Batterikapacitet (kWh)</label>
+    <input type="number" id="batteryKwh" min="10" max="120" value="75" />
+
     <label for="carRangeKm">Bilens räckvidd vid 100% (km, realistisk vinter/motorväg)</label>
     <input type="number" id="carRangeKm" min="100" max="800" value="400" />
     <div style="font-size:12px;color:#888;margin-top:-10px;margin-bottom:14px;">
-      Används för att räkna ut hur mycket batteriet behöver laddas för en resa baserat på avstånd.
+      Räckvidd används för att beräkna mål-% från avstånd vid resplanering.
     </div>
 
     <div class="toggle-row">
@@ -184,6 +190,8 @@
         if (s.area) document.getElementById('area').value = s.area;
         if (s.floor != null) document.getElementById('floor').value = s.floor;
         if (s.normalTarget != null) document.getElementById('normalTarget').value = s.normalTarget;
+        if (s.chargerKw != null) document.getElementById('chargerKw').value = s.chargerKw;
+        if (s.batteryKwh != null) document.getElementById('batteryKwh').value = s.batteryKwh;
         if (s.carRangeKm != null) {
           document.getElementById('carRangeKm').value = s.carRangeKm;
           _carRangeKm = s.carRangeKm;
@@ -235,6 +243,8 @@
         floor: Number(document.getElementById('floor').value),
         normalTarget: Number(document.getElementById('normalTarget').value),
         autoCharge: document.getElementById('autoCharge').checked,
+        chargerKw: Number(document.getElementById('chargerKw').value) || 11,
+        batteryKwh: Number(document.getElementById('batteryKwh').value) || 75,
         carRangeKm: _carRangeKm,
       };
       const apiKeyVal = document.getElementById('apiKey').value.trim();

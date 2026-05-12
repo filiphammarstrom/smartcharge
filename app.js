@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = {
   autoCharge: true,
   apiKey: '',
   carRangeKm: 400,
+  chargerKw: 11,
+  batteryKwh: 75,
 };
 
 // Calculates target battery % from trip distance.
@@ -97,7 +99,7 @@ class TeslaSmartChargingApp extends Homey.App {
     if (settings.apiKey) {
       try {
         const ai = new AIDecider({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
-        decision = await ai.decide({ currentBattery, floor: settings.floor, normalTarget: settings.normalTarget, nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices, carRangeKm: settings.carRangeKm });
+        decision = await ai.decide({ currentBattery, floor: settings.floor, normalTarget: settings.normalTarget, nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices, chargerKw: settings.chargerKw, batteryKwh: settings.batteryKwh });
         this.log(
           `[AI] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
           `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
@@ -118,6 +120,8 @@ class TeslaSmartChargingApp extends Homey.App {
         avg5day,
         futurePrices,
         priceManager: this._priceManager,
+        chargerKw: settings.chargerKw,
+        batteryKwh: settings.batteryKwh,
       });
       decision = scheduler.decide();
       this.log(
@@ -328,7 +332,7 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async apiPostSettings(body) {
-    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey', 'carRangeKm'];
+    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey', 'carRangeKm', 'chargerKw', 'batteryKwh'];
     const current = this._getSettings();
     for (const key of allowed) {
       if (body[key] !== undefined) current[key] = body[key];
