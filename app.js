@@ -38,6 +38,8 @@ class TeslaSmartChargingApp extends Homey.App {
     this._teslaBatFound = false;
     this._lastChargeSet = null;
     this._lastChargeSetAt = null;
+    this._batteryCache = null;      // { value, ts }
+    this._BATTERY_CACHE_MS = 5 * 60 * 1000;
 
     this._registerFlowCards();
     this._restoreTrip();
@@ -131,7 +133,11 @@ class TeslaSmartChargingApp extends Homey.App {
     }
 
     try {
-      await this._setTeslaCharging(decision.shouldCharge);
+      if (decision.shouldCharge !== this._lastChargeSet) {
+        await this._setTeslaCharging(decision.shouldCharge);
+      } else {
+        this.log(`Tesla charging_on oförändrat (${decision.shouldCharge}), skippar API-anrop`);
+      }
     } catch (e) {
       this.error('Could not set Tesla charging state:', e.message);
       return;
@@ -191,7 +197,15 @@ class TeslaSmartChargingApp extends Homey.App {
     const car = await this._getTeslaCarDevice();
     const cap = car.capabilitiesObj && car.capabilitiesObj['measure_battery'];
     if (!cap) throw new Error('measure_battery capability saknas på Tesla-bilenheten');
+    this._batteryCache = { value: cap.value, ts: Date.now() };
     return cap.value;
+  }
+
+  _getCachedBattery() {
+    if (this._batteryCache && (Date.now() - this._batteryCache.ts) < this._BATTERY_CACHE_MS) {
+      return this._batteryCache.value;
+    }
+    return null;
   }
 
   async _setTeslaCharging(enabled) {
@@ -265,8 +279,7 @@ class TeslaSmartChargingApp extends Homey.App {
   async apiGetStatus() {
     const settings = this._getSettings();
     const safeSettings = { ...settings, apiKey: settings.apiKey ? '••••••••' : '' };
-    let battery = null;
-    try { battery = await this._getTeslaBattery(); } catch (_) {}
+    const battery = this._getCachedBattery();
     return {
       battery,
       teslaStatus: {
