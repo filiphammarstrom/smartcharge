@@ -7,11 +7,20 @@ const AIDecider = require('./lib/AIDecider');
 
 const DEFAULT_SETTINGS = {
   area: 'SE3',
-  floor: 25,
+  floor: 20,
   normalTarget: 50,
   autoCharge: true,
   apiKey: '',
+  carRangeKm: 400,
 };
+
+// Calculates target battery % from trip distance.
+// Assumes round trip + 15 % arrival buffer; capped at 100 %.
+function distanceToTargetPercent(distanceKm, carRangeKm) {
+  const roundTrip = distanceKm * 2;
+  const needed = Math.ceil((roundTrip / carRangeKm) * 100) + 15;
+  return Math.min(100, Math.max(20, needed));
+}
 
 const INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -86,7 +95,7 @@ class TeslaSmartChargingApp extends Homey.App {
     if (settings.apiKey) {
       try {
         const ai = new AIDecider({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
-        decision = await ai.decide({ currentBattery, floor: settings.floor, normalTarget: settings.normalTarget, nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices });
+        decision = await ai.decide({ currentBattery, floor: settings.floor, normalTarget: settings.normalTarget, nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices, carRangeKm: settings.carRangeKm });
         this.log(
           `[AI] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
           `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
@@ -262,7 +271,7 @@ class TeslaSmartChargingApp extends Homey.App {
       },
       lastDecision: this._lastDecision,
       nextTrip: this._nextTrip
-        ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent }
+        ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent, distanceKm: this._nextTrip.distanceKm ?? null }
         : null,
       settings: safeSettings,
       aiEnabled: Boolean(settings.apiKey),
@@ -288,15 +297,25 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async apiPostTrip(body) {
-    const { departureTime, targetPercent } = body;
-    if (!departureTime || targetPercent == null) throw new Error('departureTime and targetPercent required');
+    const { departureTime, targetPercent, distanceKm } = body;
+    if (!departureTime) throw new Error('departureTime required');
     const dep = new Date(departureTime);
     if (isNaN(dep.getTime())) throw new Error('Invalid departureTime');
-    const pct = Number(targetPercent);
+
+    let pct;
+    if (distanceKm != null) {
+      const settings = this._getSettings();
+      pct = distanceToTargetPercent(Number(distanceKm), settings.carRangeKm);
+    } else if (targetPercent != null) {
+      pct = Number(targetPercent);
+    } else {
+      throw new Error('distanceKm or targetPercent required');
+    }
     if (pct < 20 || pct > 100) throw new Error('targetPercent must be 20–100');
-    this._setTrip(dep, pct);
+
+    this._setTrip(dep, pct, distanceKm != null ? Number(distanceKm) : null);
     this._runScheduler().catch(e => this.error(e));
-    return { ok: true, trip: { departureTime: dep.toISOString(), targetPercent: pct } };
+    return { ok: true, trip: { departureTime: dep.toISOString(), targetPercent: pct, distanceKm: distanceKm ?? null } };
   }
 
   async apiDeleteTrip() {
@@ -307,7 +326,7 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async apiPostSettings(body) {
-    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey'];
+    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey', 'carRangeKm'];
     const current = this._getSettings();
     for (const key of allowed) {
       if (body[key] !== undefined) current[key] = body[key];
@@ -320,13 +339,15 @@ class TeslaSmartChargingApp extends Homey.App {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  _setTrip(departureTime, targetPercent) {
-    this._nextTrip = { departureTime, targetPercent };
+  _setTrip(departureTime, targetPercent, distanceKm = null) {
+    this._nextTrip = { departureTime, targetPercent, distanceKm };
     this.homey.settings.set('nextTrip', {
       departureTime: departureTime.toISOString(),
       targetPercent,
+      distanceKm,
     });
-    this.log(`Trip set: ${departureTime.toISOString()} @ ${targetPercent}%`);
+    const distStr = distanceKm != null ? ` (${distanceKm} km)` : '';
+    this.log(`Trip set: ${departureTime.toISOString()} @ ${targetPercent}%${distStr}`);
   }
 
   _restoreTrip() {
@@ -334,7 +355,7 @@ class TeslaSmartChargingApp extends Homey.App {
     if (stored && stored.departureTime) {
       const dep = new Date(stored.departureTime);
       if (dep > new Date()) {
-        this._nextTrip = { departureTime: dep, targetPercent: stored.targetPercent };
+        this._nextTrip = { departureTime: dep, targetPercent: stored.targetPercent, distanceKm: stored.distanceKm ?? null };
         this.log(`Restored trip: ${dep.toISOString()} @ ${stored.targetPercent}%`);
       }
     }

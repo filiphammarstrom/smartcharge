@@ -24,6 +24,9 @@
     #status.err { background: #fee2e2; color: #991b1b; }
     .trip-section { border-top: 1px solid #eee; padding-top: 14px; margin-top: 4px; }
     .current-trip { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
+    .km-row { display: flex; gap: 12px; align-items: flex-end; }
+    .km-row > div { flex: 1; }
+    .calc-hint { font-size: 13px; color: #007aff; font-weight: 600; margin-bottom: 14px; min-height: 18px; }
 
     /* Tesla status block */
     .tesla-status { border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; }
@@ -56,11 +59,17 @@
       <option value="SE4">SE4 – Malmö</option>
     </select>
 
-    <label for="floor">Golv-batteri (%)</label>
-    <input type="number" id="floor" min="5" max="50" value="25" />
+    <label for="floor">Golv-batteri — laddas omedelbart om under detta (%)</label>
+    <input type="number" id="floor" min="5" max="50" value="20" />
 
-    <label for="normalTarget">Normal laddningsmål (%)</label>
+    <label for="normalTarget">Normalmål — hålls nära detta i vardagen (%)</label>
     <input type="number" id="normalTarget" min="20" max="100" value="50" />
+
+    <label for="carRangeKm">Bilens räckvidd vid 100% (km, realistisk vinter/motorväg)</label>
+    <input type="number" id="carRangeKm" min="100" max="800" value="400" />
+    <div style="font-size:12px;color:#888;margin-top:-10px;margin-bottom:14px;">
+      Används för att räkna ut hur mycket batteriet behöver laddas för en resa baserat på avstånd.
+    </div>
 
     <div class="toggle-row">
       <span>Automatisk laddning</span>
@@ -82,8 +91,17 @@
       <label for="departureTime">Avgångstid</label>
       <input type="datetime-local" id="departureTime" />
 
-      <label for="tripTarget">Mål-batteri (%)</label>
-      <input type="number" id="tripTarget" min="20" max="100" value="80" />
+      <div class="km-row">
+        <div>
+          <label for="distanceKm">Avstånd (km, enkel väg)</label>
+          <input type="number" id="distanceKm" min="1" max="2000" placeholder="t.ex. 100" />
+        </div>
+        <div>
+          <label for="tripTarget">Mål-batteri (%)</label>
+          <input type="number" id="tripTarget" min="20" max="100" value="80" />
+        </div>
+      </div>
+      <div id="calcHint" class="calc-hint"></div>
 
       <button id="saveTrip">Sätt resa</button>
       <button id="clearTrip" class="btn-danger">Radera resa</button>
@@ -101,6 +119,14 @@
       OK: 'OK',
       EXPENSIVE: 'Dyr',
     };
+
+    let _carRangeKm = 400;
+
+    function distanceToTarget(km, rangeKm) {
+      const roundTrip = km * 2;
+      const needed = Math.ceil((roundTrip / rangeKm) * 100) + 15;
+      return Math.min(100, Math.max(20, needed));
+    }
 
     function showStatus(msg, isError) {
       const el = document.getElementById('status');
@@ -158,14 +184,18 @@
         if (s.area) document.getElementById('area').value = s.area;
         if (s.floor != null) document.getElementById('floor').value = s.floor;
         if (s.normalTarget != null) document.getElementById('normalTarget').value = s.normalTarget;
+        if (s.carRangeKm != null) {
+          document.getElementById('carRangeKm').value = s.carRangeKm;
+          _carRangeKm = s.carRangeKm;
+        }
         if (s.autoCharge != null) document.getElementById('autoCharge').checked = s.autoCharge;
-        // Don't prefill the password field — server returns '••••••••' if key exists
+
         const aiEl = document.getElementById('aiStatus');
         if (res.aiEnabled) {
           aiEl.textContent = '✓ AI-styrning aktiv';
           aiEl.style.color = '#065f46';
         } else {
-          aiEl.textContent = 'Ingen nyckel – regelbaserad styrning används';
+          aiEl.textContent = 'Ingen nyckel — regelbaserad styrning används';
           aiEl.style.color = '#92400e';
         }
 
@@ -173,9 +203,12 @@
 
         if (res.nextTrip) {
           const dep = new Date(res.nextTrip.departureTime);
+          const distStr = res.nextTrip.distanceKm ? ` · ${res.nextTrip.distanceKm} km` : '';
           const el = document.getElementById('currentTrip');
-          el.textContent = `Aktiv resa: ${dep.toLocaleString('sv-SE')} – mål ${res.nextTrip.targetPercent}%`;
+          el.textContent = `Aktiv resa: ${dep.toLocaleString('sv-SE')} – mål ${res.nextTrip.targetPercent}%${distStr}`;
           el.style.display = 'block';
+        } else {
+          document.getElementById('currentTrip').style.display = 'none';
         }
       } catch (e) {
         const el = document.getElementById('teslaStatus');
@@ -185,12 +218,24 @@
       }
     }
 
+    // Live-beräkning: km → target %
+    document.getElementById('distanceKm').addEventListener('input', function () {
+      const km = Number(this.value);
+      const hint = document.getElementById('calcHint');
+      if (!km || km <= 0) { hint.textContent = ''; return; }
+      const target = distanceToTarget(km, _carRangeKm);
+      document.getElementById('tripTarget').value = target;
+      hint.textContent = `${km} km tur & retur → beräknat mål: ${target}% (justera manuellt vid behov)`;
+    });
+
     document.getElementById('saveSettings').addEventListener('click', async () => {
+      _carRangeKm = Number(document.getElementById('carRangeKm').value) || 400;
       const body = {
         area: document.getElementById('area').value,
         floor: Number(document.getElementById('floor').value),
         normalTarget: Number(document.getElementById('normalTarget').value),
         autoCharge: document.getElementById('autoCharge').checked,
+        carRangeKm: _carRangeKm,
       };
       const apiKeyVal = document.getElementById('apiKey').value.trim();
       if (apiKeyVal) body.apiKey = apiKeyVal;
@@ -206,11 +251,20 @@
 
     document.getElementById('saveTrip').addEventListener('click', async () => {
       const departureTime = document.getElementById('departureTime').value;
-      const targetPercent = Number(document.getElementById('tripTarget').value);
       if (!departureTime) { showStatus('Ange avgångstid', true); return; }
+      const kmVal = Number(document.getElementById('distanceKm').value);
+      const targetPercent = Number(document.getElementById('tripTarget').value);
+      const body = { departureTime };
+      if (kmVal > 0) {
+        body.distanceKm = kmVal;
+      } else {
+        body.targetPercent = targetPercent;
+      }
       try {
-        await HomeyAPI.post('/trip', { departureTime, targetPercent });
+        await HomeyAPI.post('/trip', body);
         showStatus('Resa sparad!', false);
+        document.getElementById('distanceKm').value = '';
+        document.getElementById('calcHint').textContent = '';
         loadSettings();
       } catch (e) {
         showStatus('Fel: ' + e.message, true);
@@ -220,8 +274,8 @@
     document.getElementById('clearTrip').addEventListener('click', async () => {
       try {
         await HomeyAPI.delete('/trip');
-        document.getElementById('currentTrip').style.display = 'none';
         showStatus('Resa raderad', false);
+        loadSettings();
       } catch (e) {
         showStatus('Fel: ' + e.message, true);
       }
