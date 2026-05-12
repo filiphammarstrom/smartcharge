@@ -42,10 +42,12 @@ class TeslaSmartChargingApp extends Homey.App {
 
     await this._logTeslaDevices();
 
-    // Clear price cache at midnight
+    // Clear price cache at midnight and at 14:00 when next-day prices are published
     this.homey.setInterval(() => {
       const now = new Date();
-      if (now.getHours() === 0 && now.getMinutes() < 15) {
+      const h = now.getHours();
+      const m = now.getMinutes();
+      if ((h === 0 || h === 14) && m < 15) {
         this._priceManager.clearCache();
         this.log('Price cache cleared');
       }
