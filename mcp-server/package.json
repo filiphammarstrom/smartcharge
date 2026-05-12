@@ -1,0 +1,10 @@
+{
+  "name": "tesla-smartcharge-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Tesla Smart Charging Homey app",
+  "main": "index.js",
+  "bin": { "tesla-smartcharge-mcp": "./index.js" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "*"
+  }
+}
