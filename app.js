@@ -4,6 +4,7 @@ const Homey = require('homey');
 const PriceManager = require('./lib/PriceManager');
 const { Scheduler } = require('./lib/Scheduler');
 const AIDecider = require('./lib/AIDecider');
+const CalendarSync = require('./lib/CalendarSync');
 
 const DEFAULT_SETTINGS = {
   area: 'SE3',
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS = {
   carRangeKm: 400,
   chargerKw: 11,
   batteryKwh: 82,
+  calendarUrl: '',
 };
 
 // Calculates target battery % from trip distance.
@@ -38,8 +40,9 @@ class TeslaSmartChargingApp extends Homey.App {
     this._teslaBatFound = false;
     this._lastChargeSet = null;
     this._lastChargeSetAt = null;
-    this._batteryCache = null;      // { value, ts }
+    this._batteryCache = null;
     this._BATTERY_CACHE_MS = 5 * 60 * 1000;
+    this._lastCalendarSync = null;  // { foundTrip, syncedAt }
 
     this._registerFlowCards();
     this._restoreTrip();
@@ -54,6 +57,7 @@ class TeslaSmartChargingApp extends Homey.App {
       if ((h === 0 || h === 14) && m < 15) {
         this._priceManager.clearCache();
         this.log('Price cache cleared');
+        this._syncCalendar().catch(e => this.error('Calendar sync error:', e));
       }
     }, INTERVAL_MS);
 
@@ -294,6 +298,7 @@ class TeslaSmartChargingApp extends Homey.App {
         : null,
       settings: safeSettings,
       aiEnabled: Boolean(settings.apiKey),
+      calendarSync: this._lastCalendarSync || null,
     };
   }
 
@@ -345,13 +350,54 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async apiPostSettings(body) {
-    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey', 'carRangeKm', 'chargerKw', 'batteryKwh'];
+    const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey', 'carRangeKm', 'chargerKw', 'batteryKwh', 'calendarUrl'];
     const current = this._getSettings();
     for (const key of allowed) {
       if (body[key] !== undefined) current[key] = body[key];
     }
     this.homey.settings.set('appSettings', current);
     return { ok: true, settings: { ...current, apiKey: current.apiKey ? '••••••••' : '' } };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Calendar sync
+  // ---------------------------------------------------------------------------
+
+  async _syncCalendar() {
+    const settings = this._getSettings();
+    if (!settings.calendarUrl || !settings.apiKey) return;
+
+    let trip;
+    try {
+      const sync = new CalendarSync({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
+      trip = await sync.sync(settings.calendarUrl);
+    } catch (e) {
+      this.error('[Calendar] Synkfel:', e.message);
+      this._lastCalendarSync = { foundTrip: null, syncedAt: new Date().toISOString(), error: e.message };
+      return;
+    }
+
+    this._lastCalendarSync = {
+      foundTrip: trip ? { eventName: trip.eventName, destination: trip.destination, distanceKm: trip.distanceKm, departureTime: trip.departureTime.toISOString(), confidence: trip.confidence } : null,
+      syncedAt: new Date().toISOString(),
+    };
+
+    if (!trip) {
+      this.log('[Calendar] Ingen resa hittad i kalender');
+      return;
+    }
+
+    // Only set if no manual trip exists or calendar trip is sooner
+    const shouldSet = !this._nextTrip || trip.departureTime < this._nextTrip.departureTime;
+    if (!shouldSet) {
+      this.log(`[Calendar] Resa hittad (${trip.destination}) men manuell resa är snarare — skippar`);
+      return;
+    }
+
+    const pct = distanceToTargetPercent(trip.distanceKm, settings.carRangeKm);
+    this._setTrip(trip.departureTime, pct, trip.distanceKm);
+    this.log(`[Calendar] Resa satt: ${trip.destination} (${trip.distanceKm} km) → ${pct}% kl ${trip.departureTime.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}`);
+    this._runScheduler().catch(e => this.error(e));
   }
 
   // ---------------------------------------------------------------------------

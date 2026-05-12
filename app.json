@@ -31,7 +31,8 @@
     "getPrices":    { "method": "GET",    "path": "/prices"   },
     "postTrip":     { "method": "POST",   "path": "/trip"     },
     "deleteTrip":   { "method": "DELETE", "path": "/trip"     },
-    "postSettings": { "method": "POST",   "path": "/settings" }
+    "postSettings":     { "method": "POST",   "path": "/settings"       },
+    "postCalendarSync": { "method": "POST",   "path": "/calendar/sync"  }
   },
   "flow": {
     "triggers": [
