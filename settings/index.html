@@ -145,9 +145,11 @@
       setTimeout(() => { el.style.display = 'none'; }, 3500);
     }
 
-    function api(method, path, body) {
+    function api(method, path, body, timeoutMs = 8000) {
       return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Timeout — appen svarar inte')), timeoutMs);
         _homey.api(method, path, body !== undefined ? body : null, (err, result) => {
+          clearTimeout(timer);
           if (err) reject(typeof err === 'string' ? new Error(err) : err);
           else resolve(result);
         });
@@ -333,7 +335,6 @@
 
     Homey.ready(function (homey) {
       _homey = homey;
-      homey.ready();
       loadStatus();
     });
   </script>
