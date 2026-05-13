@@ -225,32 +225,13 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async _logTeslaDevices() {
-    // Inspect this.homey.apps to find working method
     try {
-      const allMethods = [];
-      let proto = this.homey.apps;
-      while (proto) {
-        Object.getOwnPropertyNames(proto).forEach(n => { if (!allMethods.includes(n)) allMethods.push(n); });
-        proto = Object.getPrototypeOf(proto);
-      }
-      this.log('[Debug] homey.apps methods:', allMethods.filter(n => typeof this.homey.apps[n] === 'function').sort().join(', '));
+      const dev = await this._findTeslaDevice('measure_battery');
+      if (!dev) { this.log('[Tesla] Ingen enhet med measure_battery hittades'); return; }
+      const caps = dev.capabilitiesObj ? Object.keys(dev.capabilitiesObj).join(', ') : '(inga)';
+      this.log(`[Tesla] Enhet: "${dev.name}" | capabilities: ${caps}`);
     } catch (e) {
-      this.log('[Debug] homey.apps inspect failed:', e.message);
-    }
-
-    // Try getInstalled()
-    try {
-      const installed = await this.homey.apps.getInstalled();
-      this.log('[Debug] getInstalled keys:', Object.keys(installed).join(', ').slice(0, 300));
-      const teslaApp = installed['com.tesla.car'];
-      if (!teslaApp) { this.log('[Debug] com.tesla.car not found in installed'); return; }
-      this.log('[Debug] teslaApp type:', typeof teslaApp);
-      const teslaMethods = [];
-      let proto = teslaApp;
-      while (proto) { Object.getOwnPropertyNames(proto).forEach(n => { if (!teslaMethods.includes(n)) teslaMethods.push(n); }); proto = Object.getPrototypeOf(proto); }
-      this.log('[Debug] teslaApp methods:', teslaMethods.filter(n => typeof teslaApp[n] === 'function').sort().join(', '));
-    } catch (e) {
-      this.log('[Debug] getInstalled failed:', e.message);
+      this.error('[Tesla] Kunde inte lista enheter:', e.message);
     }
   }
 
