@@ -57,6 +57,10 @@ module.exports = {
     return homey.app.deleteTrip();
   },
 
+  async postCalendarSync({ homey }) {
+    return homey.app.syncCalendar();
+  },
+
   async updateSettings({ homey, body, query, params }) {
     const payload = {
       ...normalizePayload(body),

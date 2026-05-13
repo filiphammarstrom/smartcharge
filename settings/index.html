@@ -67,6 +67,14 @@
   <input type="password" id="anthropicApiKey" placeholder="sk-ant-..." autocomplete="off" />
   <p class="hint" id="apiKeyStatus" style="margin-top:4px"></p>
 
+  <label for="calendarUrl">iCal-kalender URL <span class="hint">(för automatisk resedetektion)</span></label>
+  <input type="text" id="calendarUrl" placeholder="https://calendar.google.com/calendar/ical/..." autocomplete="off" />
+
+  <div class="row" style="margin-top:8px">
+    <button id="calSyncBtn">Synka kalender nu</button>
+  </div>
+  <p class="hint" id="calSyncStatus" style="margin-top:4px"></p>
+
   <div class="row">
     <button id="saveBtn">Spara inställningar</button>
     <button id="refreshBtn">Uppdatera</button>
@@ -114,6 +122,14 @@
       $('apiKeyStatus').textContent = status.aiEnabled ? '✓ API-nyckel är inlagd' : 'Ingen API-nyckel inlagd';
       $('apiKeyStatus').style.color = status.aiEnabled ? 'green' : '#888';
 
+      var cs = status.calendarSync;
+      if (cs) {
+        var syncMsg = cs.syncedAt ? 'Senaste sync: ' + new Date(cs.syncedAt).toLocaleString('sv-SE') : '';
+        if (cs.found) syncMsg += ' — resa hittad ✓';
+        else syncMsg += ' — ingen resa hittad';
+        $('calSyncStatus').textContent = syncMsg;
+      }
+
       $('batteryValue').textContent  = status.battery == null ? '–' : status.battery + '%';
       $('tripValue').textContent     = formatTrip(status.nextTrip);
       $('decisionValue').textContent = status.lastDecision
@@ -149,6 +165,9 @@
       };
       var keyInput = $('anthropicApiKey').value.trim();
       if (keyInput) payload.anthropicApiKey = keyInput;
+
+      var calUrl = $('calendarUrl').value.trim();
+      if (calUrl) payload.calendarUrl = calUrl;
       api('POST', '/settings', payload).then(function() {
         setStatus('Inställningar sparade.', 'ok');
         loadStatus();
@@ -168,10 +187,31 @@
       });
     }
 
+    function syncCalendar() {
+      $('calSyncStatus').textContent = 'Synkar...';
+      $('calSyncBtn').disabled = true;
+      api('POST', '/calendar-sync').then(function(res) {
+        if (res.trip) {
+          $('calSyncStatus').textContent = '✓ Resa hittad: ' + res.trip.eventName + ' → ' + res.trip.destination + ' (' + res.trip.distanceKm + ' km)';
+          $('calSyncStatus').style.color = 'green';
+        } else {
+          $('calSyncStatus').textContent = 'Ingen bilresa hittad i kalendern.';
+          $('calSyncStatus').style.color = '#888';
+        }
+        loadStatus();
+      }).catch(function(err) {
+        $('calSyncStatus').textContent = 'Fel: ' + (err.message || err);
+        $('calSyncStatus').style.color = 'red';
+      }).then(function() {
+        $('calSyncBtn').disabled = false;
+      });
+    }
+
     function init() {
       $('saveBtn').addEventListener('click', saveSettings);
       $('refreshBtn').addEventListener('click', loadStatus);
       $('deleteTripBtn').addEventListener('click', deleteTrip);
+      $('calSyncBtn').addEventListener('click', syncCalendar);
       loadStatus();
     }
 

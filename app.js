@@ -37,6 +37,7 @@ class TeslaSmartChargingApp extends Homey.App {
     this._teslaBatFound = false;
     this._lastChargeSet = null;
     this._lastChargeSetAt = null;
+    this._lastCalendarSync = null;
 
     this._registerFlowCards();
     this._restoreTrip();
@@ -103,7 +104,31 @@ class TeslaSmartChargingApp extends Homey.App {
       batteryKwh: settings.batteryKwh,
     });
 
-    const decision = scheduler.decide();
+    const apiKey = this.homey.settings.get('anthropicApiKey');
+    let decision;
+    if (apiKey) {
+      try {
+        const AIDecider = require('./lib/AIDecider');
+        const ai = new AIDecider({ apiKey, log: this.log.bind(this), error: this.error.bind(this) });
+        decision = await ai.decide({
+          currentBattery,
+          floor: settings.floor,
+          normalTarget: settings.normalTarget,
+          nextTrip: this._nextTrip,
+          currentSlot,
+          avg5day,
+          futurePrices,
+          chargerKw: settings.chargerKw,
+          batteryKwh: settings.batteryKwh,
+        });
+        this.log('[AI] decision:', JSON.stringify(decision));
+      } catch (e) {
+        this.error('[AI] failed, falling back to scheduler:', e.message);
+        decision = scheduler.decide();
+      }
+    } else {
+      decision = scheduler.decide();
+    }
 
     const priceStr = currentSlot ? currentSlot.price.toFixed(4) : 'n/a';
     const avgStr = avg5day ? avg5day.toFixed(4) : 'n/a';
@@ -263,7 +288,7 @@ class TeslaSmartChargingApp extends Homey.App {
         : null,
       settings: safeSettings,
       aiEnabled: !!this.homey.settings.get('anthropicApiKey'),
-      calendarSync: null,
+      calendarSync: this._lastCalendarSync || null,
     };
   }
 
@@ -314,6 +339,32 @@ class TeslaSmartChargingApp extends Homey.App {
     };
   }
 
+  async syncCalendar() {
+    const apiKey = this.homey.settings.get('anthropicApiKey');
+    if (!apiKey) throw new Error('Ingen API-nyckel inlagd');
+
+    const calendarUrl = this.homey.settings.get('calendarUrl');
+    if (!calendarUrl) throw new Error('Ingen kalender-URL inlagd');
+
+    const CalendarSync = require('./lib/CalendarSync');
+    const cs = new CalendarSync({ apiKey, log: this.log.bind(this), error: this.error.bind(this) });
+    const trip = await cs.sync(calendarUrl);
+
+    this._lastCalendarSync = { syncedAt: new Date().toISOString(), found: trip != null };
+
+    if (trip) {
+      const settings = this._getSettings();
+      const pct = distanceToTargetPercent(trip.distanceKm, settings.carRangeKm);
+      this._setTrip(trip.departureTime, pct, trip.distanceKm);
+      this.log(`[Calendar] Resa hittad: ${trip.eventName} → ${trip.destination} (${trip.distanceKm} km) @ ${pct}%`);
+      this._runScheduler().catch(e => this.error(e));
+      return { ok: true, trip: { eventName: trip.eventName, destination: trip.destination, distanceKm: trip.distanceKm, departureTime: trip.departureTime.toISOString(), targetPercent: pct, confidence: trip.confidence } };
+    }
+
+    this.log('[Calendar] Ingen resa hittad');
+    return { ok: true, trip: null };
+  }
+
   async deleteTrip() {
     this._nextTrip = null;
     this.homey.settings.set('nextTrip', null);
@@ -331,6 +382,10 @@ class TeslaSmartChargingApp extends Homey.App {
 
     if (body.anthropicApiKey !== undefined) {
       this.homey.settings.set('anthropicApiKey', body.anthropicApiKey || null);
+    }
+
+    if (body.calendarUrl !== undefined) {
+      this.homey.settings.set('calendarUrl', body.calendarUrl || null);
     }
 
     return { ok: true, settings: current };
