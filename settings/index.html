@@ -6,91 +6,109 @@
   <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; max-width: 480px; color: #222; }
+    h3 { margin-top: 24px; margin-bottom: 6px; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
     label { display: block; margin-top: 14px; font-size: 14px; font-weight: 600; }
-    input, select { width: 100%; box-sizing: border-box; padding: 6px 8px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-    input[type=checkbox] { width: auto; }
+    label.checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-top: 14px; }
+    input[type=number], input[type=text], select {
+      width: 100%; box-sizing: border-box; padding: 6px 8px;
+      margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;
+    }
+    input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; }
+    .hint { font-size: 12px; color: #888; margin-top: 2px; font-weight: normal; }
     .row { display: flex; gap: 8px; margin-top: 16px; }
-    button { flex: 1; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    button { flex: 1; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; }
     #saveBtn { background: #C8102E; color: #fff; }
     #refreshBtn { background: #eee; color: #333; }
+    #deleteTripBtn { background: #eee; color: #C8102E; }
     .status { margin-top: 10px; font-size: 13px; min-height: 18px; }
     .status.ok { color: green; }
     .status.error { color: red; }
-    .info-block { background: #f5f5f5; border-radius: 4px; padding: 10px 12px; margin-top: 8px; font-size: 13px; }
-    h3 { margin-top: 24px; margin-bottom: 4px; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    .info-block { background: #f5f5f5; border-radius: 4px; padding: 10px 12px; margin-top: 6px; font-size: 13px; }
     pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; margin: 0; }
   </style>
 </head>
 <body>
 
-  <h3>Inställningar</h3>
+  <h3>Laddning</h3>
+
+  <label class="checkbox-label">
+    <input type="checkbox" id="autoCharge" checked />
+    Automatisk laddning aktiv
+  </label>
 
   <label for="area">Elområde</label>
   <select id="area">
-    <option value="SE1">SE1 (Luleå)</option>
-    <option value="SE2">SE2 (Sundsvall)</option>
-    <option value="SE3" selected>SE3 (Stockholm)</option>
-    <option value="SE4">SE4 (Malmö)</option>
+    <option value="SE1">SE1 – Luleå</option>
+    <option value="SE2">SE2 – Sundsvall</option>
+    <option value="SE3" selected>SE3 – Stockholm</option>
+    <option value="SE4">SE4 – Malmö</option>
   </select>
 
-  <label for="floor">Golv-% (nödladdning under denna nivå)</label>
+  <label for="floor">Golv-% <span class="hint">(nödladdning startar under denna nivå)</span></label>
   <input type="number" id="floor" min="10" max="50" value="25" />
 
-  <label for="normalTarget">Normal mål-% (utan resa)</label>
+  <label for="normalTarget">Normal mål-% <span class="hint">(utan aktiv resa)</span></label>
   <input type="number" id="normalTarget" min="20" max="100" value="50" />
 
-  <label style="margin-top:14px">
-    <input type="checkbox" id="autoCharge" checked />
-    &nbsp;Automatisk laddning aktiv
-  </label>
+  <h3>Bil &amp; laddare</h3>
+
+  <label for="chargerKw">Laddeffekt (kW) <span class="hint">(t.ex. 7.4, 11 eller 22)</span></label>
+  <input type="number" id="chargerKw" min="1" max="22" step="0.1" value="11" />
+
+  <label for="batteryKwh">Batterikapacitet (kWh) <span class="hint">(t.ex. 75, 82 eller 100)</span></label>
+  <input type="number" id="batteryKwh" min="20" max="150" value="82" />
+
+  <label for="carRangeKm">Räckvidd vid 100 % (km) <span class="hint">(används för distansbaserad resa)</span></label>
+  <input type="number" id="carRangeKm" min="100" max="800" value="400" />
 
   <div class="row">
-    <button id="saveBtn">Spara</button>
+    <button id="saveBtn">Spara inställningar</button>
     <button id="refreshBtn">Uppdatera</button>
   </div>
   <p class="status" id="saveStatus"></p>
 
   <h3>Status</h3>
   <div class="info-block">Batteri: <strong id="batteryValue">–</strong></div>
-  <div class="info-block">Nästa resa: <span id="tripValue">–</span></div>
+  <div class="info-block">Nästa resa: <span id="tripValue">–</span>
+    <button id="deleteTripBtn" style="margin-top:6px;width:100%;flex:none">Ta bort resa</button>
+  </div>
 
   <h3>Senaste beslut</h3>
   <div class="info-block"><pre id="decisionValue">–</pre></div>
 
   <script>
-    let HomeyInstance = null;
+    var HomeyInstance = null;
 
-    function $(id) {
-      return document.getElementById(id);
-    }
+    function $(id) { return document.getElementById(id); }
 
-    function setStatus(message, kind) {
-      const el = $('saveStatus');
-      el.textContent = message || '';
+    function setStatus(msg, kind) {
+      var el = $('saveStatus');
+      el.textContent = msg || '';
       el.className = ('status ' + (kind || '')).trim();
     }
 
-    function formatTrip(nextTrip) {
-      if (!nextTrip || !nextTrip.departureTime) return 'Ingen aktiv resa';
-      const dt = new Date(nextTrip.departureTime);
-      return dt.toLocaleString('sv-SE') + ' → ' + nextTrip.targetPercent + '%';
+    function formatTrip(t) {
+      if (!t || !t.departureTime) return 'Ingen aktiv resa';
+      var dt = new Date(t.departureTime);
+      var s = dt.toLocaleString('sv-SE') + ' → ' + t.targetPercent + '%';
+      if (t.distanceKm) s += ' (' + t.distanceKm + ' km)';
+      return s;
     }
 
-    function formatDecision(lastDecision) {
-      if (!lastDecision) return '–';
-      return JSON.stringify(lastDecision, null, 2);
-    }
-
-    function loadSettingsFromStatus(status) {
-      const s = status.settings || {};
-      $('area').value        = s.area || 'SE3';
-      $('floor').value       = s.floor != null ? s.floor : 25;
+    function loadFromStatus(status) {
+      var s = status.settings || {};
+      $('area').value         = s.area        || 'SE3';
+      $('floor').value        = s.floor        != null ? s.floor        : 25;
       $('normalTarget').value = s.normalTarget != null ? s.normalTarget : 50;
       $('autoCharge').checked = !!s.autoCharge;
+      $('chargerKw').value    = s.chargerKw    != null ? s.chargerKw    : 11;
+      $('batteryKwh').value   = s.batteryKwh   != null ? s.batteryKwh   : 82;
+      $('carRangeKm').value   = s.carRangeKm   != null ? s.carRangeKm   : 400;
 
       $('batteryValue').textContent  = status.battery == null ? '–' : status.battery + '%';
       $('tripValue').textContent     = formatTrip(status.nextTrip);
-      $('decisionValue').textContent = formatDecision(status.lastDecision);
+      $('decisionValue').textContent = status.lastDecision
+        ? JSON.stringify(status.lastDecision, null, 2) : '–';
     }
 
     function api(method, path, body) {
@@ -103,10 +121,7 @@
     }
 
     function loadStatus() {
-      setStatus('');
-      api('GET', '/status').then(function(status) {
-        loadSettingsFromStatus(status);
-      }).catch(function(err) {
+      api('GET', '/status').then(loadFromStatus).catch(function(err) {
         setStatus('Kunde inte läsa status: ' + (err.message || err), 'error');
       });
     }
@@ -114,14 +129,15 @@
     function saveSettings() {
       setStatus('');
       $('saveBtn').disabled = true;
-
       var payload = {
         area:         $('area').value,
         floor:        Number($('floor').value),
         normalTarget: Number($('normalTarget').value),
-        autoCharge:   $('autoCharge').checked
+        autoCharge:   $('autoCharge').checked,
+        chargerKw:    Number($('chargerKw').value),
+        batteryKwh:   Number($('batteryKwh').value),
+        carRangeKm:   Number($('carRangeKm').value)
       };
-
       api('POST', '/settings', payload).then(function() {
         setStatus('Inställningar sparade.', 'ok');
         loadStatus();
@@ -132,9 +148,19 @@
       });
     }
 
+    function deleteTrip() {
+      api('DELETE', '/trip').then(function() {
+        setStatus('Resa borttagen.', 'ok');
+        loadStatus();
+      }).catch(function(err) {
+        setStatus('Kunde inte ta bort resa: ' + (err.message || err), 'error');
+      });
+    }
+
     function init() {
       $('saveBtn').addEventListener('click', saveSettings);
       $('refreshBtn').addEventListener('click', loadStatus);
+      $('deleteTripBtn').addEventListener('click', deleteTrip);
       loadStatus();
     }
 
