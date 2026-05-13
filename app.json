@@ -31,7 +31,7 @@
     "setTrip":          { "method": "POST",   "path": "/trip",           "public": true  },
     "setTripGet":       { "method": "GET",    "path": "/trip/set",       "public": true  },
     "deleteTrip":       { "method": "DELETE", "path": "/trip",           "public": true  },
-    "updateSettings":   { "method": "POST",   "path": "/settings",       "public": false },
+    "updateSettings":   { "method": "POST",   "path": "/settings",       "public": false }
   },
   "flow": {
     "triggers": [
