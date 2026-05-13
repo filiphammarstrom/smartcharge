@@ -48,6 +48,14 @@ class TeslaSmartChargingApp extends Homey.App {
         this._priceManager.clearCache();
         this.log('Price cache cleared');
       }
+      if (now.getHours() === 6 && now.getMinutes() < 15) {
+        const calUrl = this.homey.settings.get('calendarUrl');
+        const apiKey = this.homey.settings.get('anthropicApiKey');
+        if (calUrl && apiKey) {
+          this.log('Auto calendar sync starting');
+          this.syncCalendar().catch(e => this.error('Auto calendar sync failed:', e.message));
+        }
+      }
     }, INTERVAL_MS);
 
     await this._runScheduler();
