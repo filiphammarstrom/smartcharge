@@ -61,6 +61,12 @@
   <label for="carRangeKm">Räckvidd vid 100 % (km) <span class="hint">(används för distansbaserad resa)</span></label>
   <input type="number" id="carRangeKm" min="100" max="800" value="400" />
 
+  <h3>AI (Claude)</h3>
+
+  <label for="anthropicApiKey">Anthropic API-nyckel <span class="hint">(lagras krypterat på Homey)</span></label>
+  <input type="password" id="anthropicApiKey" placeholder="sk-ant-..." autocomplete="off" />
+  <p class="hint" id="apiKeyStatus" style="margin-top:4px"></p>
+
   <div class="row">
     <button id="saveBtn">Spara inställningar</button>
     <button id="refreshBtn">Uppdatera</button>
@@ -105,6 +111,9 @@
       $('batteryKwh').value   = s.batteryKwh   != null ? s.batteryKwh   : 82;
       $('carRangeKm').value   = s.carRangeKm   != null ? s.carRangeKm   : 400;
 
+      $('apiKeyStatus').textContent = status.aiEnabled ? '✓ API-nyckel är inlagd' : 'Ingen API-nyckel inlagd';
+      $('apiKeyStatus').style.color = status.aiEnabled ? 'green' : '#888';
+
       $('batteryValue').textContent  = status.battery == null ? '–' : status.battery + '%';
       $('tripValue').textContent     = formatTrip(status.nextTrip);
       $('decisionValue').textContent = status.lastDecision
@@ -138,6 +147,8 @@
         batteryKwh:   Number($('batteryKwh').value),
         carRangeKm:   Number($('carRangeKm').value)
       };
+      var keyInput = $('anthropicApiKey').value.trim();
+      if (keyInput) payload.anthropicApiKey = keyInput;
       api('POST', '/settings', payload).then(function() {
         setStatus('Inställningar sparade.', 'ok');
         loadStatus();

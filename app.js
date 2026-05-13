@@ -262,7 +262,7 @@ class TeslaSmartChargingApp extends Homey.App {
           }
         : null,
       settings: safeSettings,
-      aiEnabled: false,
+      aiEnabled: !!this.homey.settings.get('anthropicApiKey'),
       calendarSync: null,
     };
   }
@@ -328,6 +328,11 @@ class TeslaSmartChargingApp extends Homey.App {
       if (body[key] !== undefined) current[key] = body[key];
     }
     this.homey.settings.set('appSettings', current);
+
+    if (body.anthropicApiKey !== undefined) {
+      this.homey.settings.set('anthropicApiKey', body.anthropicApiKey || null);
+    }
+
     return { ok: true, settings: current };
   }
 
