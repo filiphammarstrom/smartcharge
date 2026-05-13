@@ -174,13 +174,17 @@ class TeslaSmartChargingApp extends Homey.App {
   // ---------------------------------------------------------------------------
 
   async _findTeslaDevice(capability) {
-    const devices = await this.homey.devices.getDevices();
-    return Object.values(devices).find(
-      d => d.driverUri
-        && d.driverUri.includes('com.tesla.car')
-        && d.capabilitiesObj
-        && capability in d.capabilitiesObj
-    ) || null;
+    const teslaApp = await this.homey.apps.getApp('com.tesla.car');
+    const drivers = await teslaApp.getDrivers();
+    for (const driver of Object.values(drivers)) {
+      const devices = await driver.getDevices();
+      for (const device of Object.values(devices)) {
+        if (device.capabilitiesObj && capability in device.capabilitiesObj) {
+          return device;
+        }
+      }
+    }
+    return null;
   }
 
   async _getTeslaCarDevice() {
@@ -221,20 +225,20 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async _logTeslaDevices() {
-    this.log('[Debug] this.homey.devices:', typeof this.homey.devices, this.homey.devices == null ? '(null/undefined)' : '(exists)');
-
     try {
-      const devices = await this.homey.devices.getDevices();
-      const teslaDevices = Object.values(devices).filter(
-        d => d.driverUri && d.driverUri.includes('com.tesla.car')
-      );
-      if (teslaDevices.length === 0) {
-        this.log('[Tesla] Inga enheter från com.tesla.car hittades i Homey');
+      const teslaApp = await this.homey.apps.getApp('com.tesla.car');
+      const drivers = await teslaApp.getDrivers();
+      const driverIds = Object.keys(drivers);
+      if (driverIds.length === 0) {
+        this.log('[Tesla] Inga drivrutiner hittades i com.tesla.car');
         return;
       }
-      for (const d of teslaDevices) {
-        const caps = d.capabilitiesObj ? Object.keys(d.capabilitiesObj).join(', ') : '(inga)';
-        this.log(`[Tesla] Enhet: "${d.name}" | driverId: ${d.driverId} | capabilities: ${caps}`);
+      for (const driver of Object.values(drivers)) {
+        const devices = await driver.getDevices();
+        for (const d of Object.values(devices)) {
+          const caps = d.capabilitiesObj ? Object.keys(d.capabilitiesObj).join(', ') : '(inga)';
+          this.log(`[Tesla] Enhet: "${d.name}" | driverId: ${driver.id} | capabilities: ${caps}`);
+        }
       }
     } catch (e) {
       this.error('[Tesla] Kunde inte lista enheter:', e.message);
