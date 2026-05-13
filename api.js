@@ -67,8 +67,4 @@ module.exports = {
     return homey.app.updateSettings(payload);
   },
 
-  async postCalendarSync({ homey }) {
-    homey.app._syncCalendar().catch(e => homey.app.error('Calendar sync error:', e));
-    return { ok: true, message: 'Calendar sync started' };
-  },
 };
