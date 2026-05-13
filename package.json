@@ -4,6 +4,6 @@
   "main": "app.js",
   "dependencies": {
     "@anthropic-ai/sdk": "*",
-    "homey-api": "*"
+    "homey-api": "3.16.0"
   }
 }
