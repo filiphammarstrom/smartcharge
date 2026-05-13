@@ -225,23 +225,30 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   async _logTeslaDevices() {
+    // Inspect this.homey.apps to find working method
     try {
-      const teslaApp = await this.homey.apps.getApp('com.tesla.car');
-      const drivers = await teslaApp.getDrivers();
-      const driverIds = Object.keys(drivers);
-      if (driverIds.length === 0) {
-        this.log('[Tesla] Inga drivrutiner hittades i com.tesla.car');
-        return;
+      const allMethods = [];
+      let proto = this.homey.apps;
+      while (proto) {
+        Object.getOwnPropertyNames(proto).forEach(n => { if (!allMethods.includes(n)) allMethods.push(n); });
+        proto = Object.getPrototypeOf(proto);
       }
-      for (const driver of Object.values(drivers)) {
-        const devices = await driver.getDevices();
-        for (const d of Object.values(devices)) {
-          const caps = d.capabilitiesObj ? Object.keys(d.capabilitiesObj).join(', ') : '(inga)';
-          this.log(`[Tesla] Enhet: "${d.name}" | driverId: ${driver.id} | capabilities: ${caps}`);
+      this.log('[Debug] homey.apps methods:', allMethods.filter(n => typeof this.homey.apps[n] === 'function').sort().join(', '));
+    } catch (e) {
+      this.log('[Debug] homey.apps inspect failed:', e.message);
+    }
+
+    // Try every plausible method name
+    for (const method of ['getApp', 'get', 'getApps', 'getInstalledApps']) {
+      if (typeof this.homey.apps[method] === 'function') {
+        this.log(`[Debug] homey.apps.${method} exists — trying it`);
+        try {
+          const result = await this.homey.apps[method]('com.tesla.car');
+          this.log(`[Debug] homey.apps.${method}('com.tesla.car') →`, typeof result, JSON.stringify(result)?.slice(0, 200));
+        } catch (e) {
+          this.log(`[Debug] homey.apps.${method}() failed:`, e.message);
         }
       }
-    } catch (e) {
-      this.error('[Tesla] Kunde inte lista enheter:', e.message);
     }
   }
 
