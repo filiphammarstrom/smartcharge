@@ -1,32 +1,74 @@
 'use strict';
 
-// Homey SDK 3: API routes are handled here, not via homey.api.registerGetHandler.
-// Function names match the keys in app.json "api" object.
-// Access the App instance via homey.app.
+// Homey SDK3 can deliver the request body in several shapes depending on
+// the client (Homey app, iOS Shortcuts, curl, …).  normalizePayload tries
+// each known location and returns a plain object.
+function normalizePayload(input) {
+  if (!input) return {};
+  if (typeof input === 'string') {
+    try { return JSON.parse(input); } catch (_) { return {}; }
+  }
+  if (Array.isArray(input)) return {};
+  if (typeof input === 'object') {
+    if (typeof input.body === 'string') {
+      try { return JSON.parse(input.body); } catch (_) {}
+    }
+    if (typeof input.rawBody === 'string') {
+      try { return JSON.parse(input.rawBody); } catch (_) {}
+    }
+    if (typeof input.value === 'string') {
+      try { return JSON.parse(input.value); } catch (_) {}
+    }
+    return input;
+  }
+  return {};
+}
 
 module.exports = {
   async getStatus({ homey }) {
-    return homey.app.apiGetStatus();
+    return homey.app.getStatus();
   },
 
   async getPrices({ homey }) {
-    return homey.app.apiGetPrices();
+    return homey.app.getPrices();
   },
 
-  async postTrip({ homey, body }) {
-    return homey.app.apiPostTrip(body);
+  async setTrip({ homey, body, query, params }) {
+    const payload = {
+      ...normalizePayload(body),
+      ...normalizePayload(query),
+      ...normalizePayload(params),
+    };
+    homey.app.log(`api.setTrip payload=${JSON.stringify(payload)}`);
+    return homey.app.setTrip(payload);
+  },
+
+  // GET fallback used by iOS Shortcuts (can't easily POST JSON)
+  async setTripGet({ homey, body, query, params }) {
+    const payload = {
+      ...normalizePayload(body),
+      ...normalizePayload(query),
+      ...normalizePayload(params),
+    };
+    return homey.app.setTrip(payload);
   },
 
   async deleteTrip({ homey }) {
-    return homey.app.apiDeleteTrip();
+    return homey.app.deleteTrip();
   },
 
-  async postSettings({ homey, body }) {
-    return homey.app.apiPostSettings(body);
+  async updateSettings({ homey, body, query, params }) {
+    const payload = {
+      ...normalizePayload(body),
+      ...normalizePayload(query),
+      ...normalizePayload(params),
+    };
+    homey.app.log(`api.updateSettings payload=${JSON.stringify(payload)}`);
+    return homey.app.updateSettings(payload);
   },
 
   async postCalendarSync({ homey }) {
     homey.app._syncCalendar().catch(e => homey.app.error('Calendar sync error:', e));
-    return { ok: true, message: 'Kalendersynk startad' };
+    return { ok: true, message: 'Calendar sync started' };
   },
 };

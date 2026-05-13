@@ -1,6 +1,7 @@
 'use strict';
 
 const Homey = require('homey');
+const { HomeyAPI } = require('homey-api');
 const PriceManager = require('./lib/PriceManager');
 const { Scheduler } = require('./lib/Scheduler');
 const AIDecider = require('./lib/AIDecider');
@@ -18,19 +19,20 @@ const DEFAULT_SETTINGS = {
   calendarUrl: '',
 };
 
-// Calculates target battery % from trip distance.
-// Assumes round trip + 15 % arrival buffer; capped at 100 %.
+// Round trip + 15 % arrival buffer, capped at 100 %.
 function distanceToTargetPercent(distanceKm, carRangeKm) {
   const roundTrip = distanceKm * 2;
   const needed = Math.ceil((roundTrip / carRangeKm) * 100) + 15;
   return Math.min(100, Math.max(20, needed));
 }
 
-const INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const INTERVAL_MS = 15 * 60 * 1000;
 
 class TeslaSmartChargingApp extends Homey.App {
   async onInit() {
     this.log('Tesla Smart Charging starting...');
+
+    this.homeyApi = await HomeyAPI.createAppAPI({ homey: this.homey });
 
     this._priceManager = new PriceManager(this.homey);
     this._nextTrip = null;
@@ -42,14 +44,12 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastChargeSetAt = null;
     this._batteryCache = null;
     this._BATTERY_CACHE_MS = 5 * 60 * 1000;
-    this._lastCalendarSync = null;  // { foundTrip, syncedAt }
+    this._lastCalendarSync = null;
 
     this._registerFlowCards();
     this._restoreTrip();
 
-    await this._logTeslaDevices();
-
-    // Clear price cache at midnight and at 14:00 when next-day prices are published
+    // Clear price cache at midnight and 14:00 when next-day prices arrive
     this.homey.setInterval(() => {
       const now = new Date();
       const h = now.getHours();
@@ -61,7 +61,6 @@ class TeslaSmartChargingApp extends Homey.App {
       }
     }, INTERVAL_MS);
 
-    // Run immediately, then every 15 minutes
     await this._runScheduler();
     this.homey.setInterval(() => {
       this._runScheduler().catch(e => this.error('Scheduler error:', e));
@@ -70,6 +69,14 @@ class TeslaSmartChargingApp extends Homey.App {
 
   async _runScheduler() {
     const settings = this._getSettings();
+
+    // Expire past trips
+    if (this._nextTrip && this._nextTrip.departureTime <= new Date()) {
+      this.log('Past trip expired, clearing');
+      this._nextTrip = null;
+      this.homey.settings.set('nextTrip', null);
+    }
+
     if (!settings.autoCharge) {
       this.log('Auto charge disabled, skipping');
       return;
@@ -83,35 +90,43 @@ class TeslaSmartChargingApp extends Homey.App {
       return;
     }
 
-    const area = settings.area;
-
     let currentSlot, avg5day, futurePrices;
     try {
       [currentSlot, avg5day, futurePrices] = await Promise.all([
-        this._priceManager.getCurrentSlotPrice(area),
-        this._priceManager.get5DayAverage(area),
-        this._priceManager.getFuturePrices(area),
+        this._priceManager.getCurrentSlotPrice(settings.area),
+        this._priceManager.get5DayAverage(settings.area),
+        this._priceManager.getFuturePrices(settings.area),
       ]);
     } catch (e) {
       this.error('Could not fetch prices:', e.message);
       return;
     }
 
-    let decision;
     const priceStr = currentSlot ? currentSlot.price.toFixed(4) : 'n/a';
     const avgStr = avg5day ? avg5day.toFixed(4) : 'n/a';
     const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : 'n/a';
 
+    let decision;
     if (settings.apiKey) {
       try {
         const ai = new AIDecider({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
-        decision = await ai.decide({ currentBattery, floor: settings.floor, normalTarget: settings.normalTarget, nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices, chargerKw: settings.chargerKw, batteryKwh: settings.batteryKwh });
+        decision = await ai.decide({
+          currentBattery,
+          floor: settings.floor,
+          normalTarget: settings.normalTarget,
+          nextTrip: this._nextTrip,
+          currentSlot,
+          avg5day,
+          futurePrices,
+          chargerKw: settings.chargerKw,
+          batteryKwh: settings.batteryKwh,
+        });
         this.log(
-          `[AI] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
-          `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
+          `[AI] battery=${currentBattery}% tier=${tier} price=${priceStr} avg=${avgStr} ` +
+          `target=${decision.target}% → ${decision.shouldCharge ? 'CHARGE' : 'STOP'} (${decision.reason})`
         );
       } catch (e) {
-        this.error('[AI] Beslut misslyckades, faller tillbaka på regelbaserad scheduler:', e.message);
+        this.error('[AI] Decision failed, falling back to scheduler:', e.message);
         decision = null;
       }
     }
@@ -131,8 +146,8 @@ class TeslaSmartChargingApp extends Homey.App {
       });
       decision = scheduler.decide();
       this.log(
-        `[Scheduler] batteri=${currentBattery}% tier=${tier} pris=${priceStr} avg=${avgStr} ` +
-        `mål=${decision.target}% → ${decision.shouldCharge ? 'LADDAR' : 'STOPPAR'} (${decision.reason})`
+        `[Scheduler] battery=${currentBattery}% tier=${tier} price=${priceStr} avg=${avgStr} ` +
+        `target=${decision.target}% → ${decision.shouldCharge ? 'CHARGE' : 'STOP'} (${decision.reason})`
       );
     }
 
@@ -140,14 +155,13 @@ class TeslaSmartChargingApp extends Homey.App {
       if (decision.shouldCharge !== this._lastChargeSet) {
         await this._setTeslaCharging(decision.shouldCharge);
       } else {
-        this.log(`Tesla charging_on oförändrat (${decision.shouldCharge}), skippar API-anrop`);
+        this.log(`charging_on unchanged (${decision.shouldCharge}), skipping API call`);
       }
     } catch (e) {
       this.error('Could not set Tesla charging state:', e.message);
       return;
     }
 
-    // Flow triggers on state transitions
     if (decision.shouldCharge && this._lastCharging === false) {
       this._triggerCard('cheap_charging_started').catch(e => this.error(e));
     }
@@ -170,41 +184,33 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   // ---------------------------------------------------------------------------
-  // Tesla device – find by capability, not by driverId
+  // Tesla devices via HomeyAPI
   // ---------------------------------------------------------------------------
 
-  async _findTeslaDevice(capability) {
-    const teslaApp = await this.homey.apps.getApp('com.tesla.car');
-    const drivers = await teslaApp.getDrivers();
-    for (const driver of Object.values(drivers)) {
-      const devices = await driver.getDevices();
-      for (const device of Object.values(devices)) {
-        if (device.capabilitiesObj && capability in device.capabilitiesObj) {
-          return device;
-        }
-      }
-    }
-    return null;
-  }
-
   async _getTeslaCarDevice() {
-    const dev = await this._findTeslaDevice('measure_battery');
-    this._teslaCarFound = dev !== null;
-    if (!dev) throw new Error('Ingen Tesla-enhet med measure_battery hittades (com.tesla.car)');
-    return dev;
+    const devices = await this.homeyApi.devices.getDevices();
+    const car = Object.values(devices).find(
+      d => d.driverId === 'homey:app:com.tesla.car:car'
+    );
+    this._teslaCarFound = car != null;
+    if (!car) throw new Error('No Tesla car device found (driverId: homey:app:com.tesla.car:car)');
+    return car;
   }
 
   async _getTeslaBatteryDevice() {
-    const dev = await this._findTeslaDevice('charging_on');
-    this._teslaBatFound = dev !== null;
-    if (!dev) throw new Error('Ingen Tesla-enhet med charging_on hittades (com.tesla.car)');
-    return dev;
+    const devices = await this.homeyApi.devices.getDevices();
+    const bat = Object.values(devices).find(
+      d => d.driverId === 'homey:app:com.tesla.car:battery'
+    );
+    this._teslaBatFound = bat != null;
+    if (!bat) throw new Error('No Tesla battery device found (driverId: homey:app:com.tesla.car:battery)');
+    return bat;
   }
 
   async _getTeslaBattery() {
     const car = await this._getTeslaCarDevice();
-    const cap = car.capabilitiesObj && car.capabilitiesObj['measure_battery'];
-    if (!cap) throw new Error('measure_battery capability saknas på Tesla-bilenheten');
+    const cap = car.capabilitiesObj && car.capabilitiesObj.measure_battery;
+    if (!cap) throw new Error('measure_battery capability not found on Tesla car device');
     this._batteryCache = { value: cap.value, ts: Date.now() };
     return cap.value;
   }
@@ -218,21 +224,22 @@ class TeslaSmartChargingApp extends Homey.App {
 
   async _setTeslaCharging(enabled) {
     const bat = await this._getTeslaBatteryDevice();
+    const caps = bat.capabilitiesObj || {};
+
+    const chargingPort = caps.charging_port?.value;
+    const chargingCable = caps.charging_port_cable?.value;
+
+    this.log(`Charging device: port=${chargingPort}, cable=${chargingCable}`);
+
+    if (enabled && !chargingPort && !chargingCable) {
+      this.log('Skipping: cable not connected');
+      return;
+    }
+
     await bat.setCapabilityValue('charging_on', enabled);
     this._lastChargeSet = enabled;
     this._lastChargeSetAt = new Date().toISOString();
-    this.log(`Tesla charging_on satt till: ${enabled}`);
-  }
-
-  async _logTeslaDevices() {
-    try {
-      const dev = await this._findTeslaDevice('measure_battery');
-      if (!dev) { this.log('[Tesla] Ingen enhet med measure_battery hittades'); return; }
-      const caps = dev.capabilitiesObj ? Object.keys(dev.capabilitiesObj).join(', ') : '(inga)';
-      this.log(`[Tesla] Enhet: "${dev.name}" | capabilities: ${caps}`);
-    } catch (e) {
-      this.error('[Tesla] Kunde inte lista enheter:', e.message);
-    }
+    this.log(`Tesla charging_on set to: ${enabled}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -253,15 +260,15 @@ class TeslaSmartChargingApp extends Homey.App {
           this._priceManager.get5DayAverage(settings.area),
         ]);
         if (!slot) return false;
-        const tier = this._priceManager.classifyPrice(slot.price, avg);
-        return tier === 'CHEAP' || tier === 'VERY_CHEAP';
+        return ['CHEAP', 'VERY_CHEAP'].includes(this._priceManager.classifyPrice(slot.price, avg));
       });
 
     this.homey.flow
       .getActionCard('set_next_trip')
       .registerRunListener(async args => {
-        const dep = new Date(`${args.departureDate}T${args.departureTime}:00`);
-        this._setTrip(dep, args.targetPercent);
+        const dep = new Date(args.departureTime);
+        if (isNaN(dep.getTime())) throw new Error('Invalid departureTime');
+        this._setTrip(dep, Number(args.targetPercent));
         await this._runScheduler();
       });
   }
@@ -271,10 +278,10 @@ class TeslaSmartChargingApp extends Homey.App {
   }
 
   // ---------------------------------------------------------------------------
-  // API handlers – called from api.js (Homey SDK 3 pattern)
+  // API handlers (method names match app.json "api" keys)
   // ---------------------------------------------------------------------------
 
-  async apiGetStatus() {
+  async getStatus() {
     const settings = this._getSettings();
     const safeSettings = { ...settings, apiKey: settings.apiKey ? '••••••••' : '' };
     const battery = this._getCachedBattery();
@@ -288,7 +295,11 @@ class TeslaSmartChargingApp extends Homey.App {
       },
       lastDecision: this._lastDecision,
       nextTrip: this._nextTrip
-        ? { departureTime: this._nextTrip.departureTime.toISOString(), targetPercent: this._nextTrip.targetPercent, distanceKm: this._nextTrip.distanceKm ?? null }
+        ? {
+            departureTime: this._nextTrip.departureTime.toISOString(),
+            targetPercent: this._nextTrip.targetPercent,
+            distanceKm: this._nextTrip.distanceKm ?? null,
+          }
         : null,
       settings: safeSettings,
       aiEnabled: Boolean(settings.apiKey),
@@ -296,7 +307,7 @@ class TeslaSmartChargingApp extends Homey.App {
     };
   }
 
-  async apiGetPrices() {
+  async getPrices() {
     const settings = this._getSettings();
     const [prices, avg] = await Promise.all([
       this._priceManager.getFuturePrices(settings.area),
@@ -314,8 +325,8 @@ class TeslaSmartChargingApp extends Homey.App {
     };
   }
 
-  async apiPostTrip(body) {
-    const { departureTime, targetPercent, distanceKm } = body;
+  async setTrip(body) {
+    const { departureTime, targetPercent, distanceKm } = body || {};
     if (!departureTime) throw new Error('departureTime required');
     const dep = new Date(departureTime);
     if (isNaN(dep.getTime())) throw new Error('Invalid departureTime');
@@ -333,17 +344,24 @@ class TeslaSmartChargingApp extends Homey.App {
 
     this._setTrip(dep, pct, distanceKm != null ? Number(distanceKm) : null);
     this._runScheduler().catch(e => this.error(e));
-    return { ok: true, trip: { departureTime: dep.toISOString(), targetPercent: pct, distanceKm: distanceKm ?? null } };
+    return {
+      ok: true,
+      trip: {
+        departureTime: dep.toISOString(),
+        targetPercent: pct,
+        distanceKm: distanceKm ?? null,
+      },
+    };
   }
 
-  async apiDeleteTrip() {
+  async deleteTrip() {
     this._nextTrip = null;
     this.homey.settings.set('nextTrip', null);
     this._runScheduler().catch(e => this.error(e));
     return { ok: true };
   }
 
-  async apiPostSettings(body) {
+  async updateSettings(body) {
     const allowed = ['area', 'floor', 'normalTarget', 'autoCharge', 'apiKey', 'carRangeKm', 'chargerKw', 'batteryKwh', 'calendarUrl'];
     const current = this._getSettings();
     for (const key of allowed) {
@@ -366,31 +384,38 @@ class TeslaSmartChargingApp extends Homey.App {
       const sync = new CalendarSync({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
       trip = await sync.sync(settings.calendarUrl);
     } catch (e) {
-      this.error('[Calendar] Synkfel:', e.message);
+      this.error('[Calendar] Sync error:', e.message);
       this._lastCalendarSync = { foundTrip: null, syncedAt: new Date().toISOString(), error: e.message };
       return;
     }
 
     this._lastCalendarSync = {
-      foundTrip: trip ? { eventName: trip.eventName, destination: trip.destination, distanceKm: trip.distanceKm, departureTime: trip.departureTime.toISOString(), confidence: trip.confidence } : null,
+      foundTrip: trip
+        ? {
+            eventName: trip.eventName,
+            destination: trip.destination,
+            distanceKm: trip.distanceKm,
+            departureTime: trip.departureTime.toISOString(),
+            confidence: trip.confidence,
+          }
+        : null,
       syncedAt: new Date().toISOString(),
     };
 
     if (!trip) {
-      this.log('[Calendar] Ingen resa hittad i kalender');
+      this.log('[Calendar] No trip found in calendar');
       return;
     }
 
-    // Only set if no manual trip exists or calendar trip is sooner
     const shouldSet = !this._nextTrip || trip.departureTime < this._nextTrip.departureTime;
     if (!shouldSet) {
-      this.log(`[Calendar] Resa hittad (${trip.destination}) men manuell resa är snarare — skippar`);
+      this.log(`[Calendar] Found trip (${trip.destination}) but manual trip is sooner — skipping`);
       return;
     }
 
     const pct = distanceToTargetPercent(trip.distanceKm, settings.carRangeKm);
     this._setTrip(trip.departureTime, pct, trip.distanceKm);
-    this.log(`[Calendar] Resa satt: ${trip.destination} (${trip.distanceKm} km) → ${pct}% kl ${trip.departureTime.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}`);
+    this.log(`[Calendar] Trip set: ${trip.destination} (${trip.distanceKm} km) → ${pct}%`);
     this._runScheduler().catch(e => this.error(e));
   }
 
@@ -414,7 +439,11 @@ class TeslaSmartChargingApp extends Homey.App {
     if (stored && stored.departureTime) {
       const dep = new Date(stored.departureTime);
       if (dep > new Date()) {
-        this._nextTrip = { departureTime: dep, targetPercent: stored.targetPercent, distanceKm: stored.distanceKm ?? null };
+        this._nextTrip = {
+          departureTime: dep,
+          targetPercent: stored.targetPercent,
+          distanceKm: stored.distanceKm ?? null,
+        };
         this.log(`Restored trip: ${dep.toISOString()} @ ${stored.targetPercent}%`);
       }
     }

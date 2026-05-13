@@ -3,44 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tesla Smart Charging – Inställningar</title>
+  <title>Tesla Smart Charging</title>
+  <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; background: #f5f5f7; color: #1d1d1f; }
-    h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
-    h2 { font-size: 15px; font-weight: 600; margin: 24px 0 12px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
-    .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 20px; background: #f5f5f7; color: #1d1d1f; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 16px; }
+    h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin: 20px 0 10px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
     label { display: block; font-size: 14px; color: #555; margin-bottom: 4px; }
-    input, select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; margin-bottom: 14px; }
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    input[type="number"], input[type="url"], input[type="password"], select {
+      width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 15px; margin-bottom: 12px; background: #fff;
+    }
+    .hint { font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 12px; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .toggle-row span { font-size: 15px; }
     input[type="checkbox"] { width: 40px; height: 22px; accent-color: #007aff; cursor: pointer; }
-    button { background: #007aff; color: white; border: none; border-radius: 10px; padding: 12px 24px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 4px; }
+    button { background: #007aff; color: #fff; border: none; border-radius: 10px; padding: 11px 20px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 4px; }
     button:hover { background: #0066cc; }
-    .btn-danger { background: #ff3b30; margin-top: 8px; }
-    .btn-danger:hover { background: #cc2e24; }
-    #status { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; }
-    #status.ok { background: #d1fae5; color: #065f46; }
-    #status.err { background: #fee2e2; color: #991b1b; }
-    .trip-section { border-top: 1px solid #eee; padding-top: 14px; margin-top: 4px; }
-    .current-trip { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
-    .km-row { display: flex; gap: 12px; align-items: flex-end; }
-    .km-row > div { flex: 1; }
-    .calc-hint { font-size: 13px; color: #007aff; font-weight: 600; margin-bottom: 14px; min-height: 18px; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .btn-green { background: #34c759; margin-top: 8px; }
+    .btn-green:hover { background: #28a244; }
+    .btn-red { background: #ff3b30; margin-top: 8px; }
+    .btn-red:hover { background: #cc2e24; }
+    #flashMsg { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 14px; display: none; }
+    #flashMsg.ok  { background: #d1fae5; color: #065f46; }
+    #flashMsg.err { background: #fee2e2; color: #991b1b; }
 
     /* Tesla status block */
-    .tesla-status { border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; }
-    .tesla-status.connected { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
+    .tesla-status { border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; line-height: 1.6; }
+    .tesla-status.connected    { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
     .tesla-status.disconnected { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
-    .tesla-status.loading { background: #f3f4f6; border: 1px solid #d1d5db; color: #6b7280; }
-    .tesla-status .row { display: flex; justify-content: space-between; margin-bottom: 2px; }
-    .tesla-status .label { font-weight: 500; }
-    .tesla-status .decision { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.08); }
+    .tesla-status.loading      { background: #f3f4f6; border: 1px solid #d1d5db; color: #6b7280; }
+    .ts-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .ts-decision { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.08); }
     .tier-badge { display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 12px; font-weight: 600; }
     .tier-VERY_CHEAP { background: #dcfce7; color: #15803d; }
     .tier-CHEAP      { background: #d1fae5; color: #065f46; }
     .tier-OK         { background: #fef3c7; color: #92400e; }
     .tier-EXPENSIVE  { background: #fee2e2; color: #991b1b; }
+
+    /* Trip section */
+    .current-trip { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
+    .km-row { display: flex; gap: 12px; }
+    .km-row > div { flex: 1; }
+    .calc-hint { font-size: 13px; color: #007aff; font-weight: 600; min-height: 18px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -55,36 +63,36 @@
     <select id="area">
       <option value="SE1">SE1 – Luleå</option>
       <option value="SE2">SE2 – Sundsvall</option>
-      <option value="SE3" selected>SE3 – Stockholm</option>
+      <option value="SE3">SE3 – Stockholm</option>
       <option value="SE4">SE4 – Malmö</option>
     </select>
 
-    <label for="floor">Golv-batteri — laddas omedelbart om under detta (%)</label>
-    <input type="number" id="floor" min="5" max="50" value="20" />
+    <label for="floor">Golv-batteri (%)</label>
+    <input type="number" id="floor" min="5" max="50" />
+    <div class="hint">Laddas alltid omedelbart om batteriet sjunker under detta.</div>
 
-    <label for="normalTarget">Normalmål — hålls nära detta i vardagen (%)</label>
-    <input type="number" id="normalTarget" min="20" max="100" value="50" />
+    <label for="normalTarget">Normalmål (%)</label>
+    <input type="number" id="normalTarget" min="20" max="100" />
+    <div class="hint">Basnivå i vardagen utan planerad resa.</div>
 
     <label for="chargerKw">Laddeffekt hemma (kW)</label>
-    <input type="number" id="chargerKw" min="1" max="22" step="0.1" value="11" />
+    <input type="number" id="chargerKw" min="1" max="22" step="0.1" />
 
     <label for="batteryKwh">Batterikapacitet (kWh)</label>
-    <input type="number" id="batteryKwh" min="10" max="120" value="82" />
+    <input type="number" id="batteryKwh" min="10" max="120" />
 
-    <label for="carRangeKm">Bilens räckvidd vid 100% (km, realistisk vinter/motorväg)</label>
-    <input type="number" id="carRangeKm" min="100" max="800" value="400" />
-    <div style="font-size:12px;color:#888;margin-top:-10px;margin-bottom:14px;">
-      Räckvidd används för att beräkna mål-% från avstånd vid resplanering.
-    </div>
+    <label for="carRangeKm">Räckvidd vid 100 % (km)</label>
+    <input type="number" id="carRangeKm" min="100" max="800" />
+    <div class="hint">Används för att beräkna mål-% från avstånd.</div>
 
     <div class="toggle-row">
-      <span>Automatisk laddning</span>
-      <input type="checkbox" id="autoCharge" checked />
+      <span>Automatisk laddstyrning</span>
+      <input type="checkbox" id="autoCharge" />
     </div>
 
-    <label for="apiKey">Anthropic API-nyckel (för AI-styrning)</label>
+    <label for="apiKey">Anthropic API-nyckel (AI-styrning)</label>
     <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" />
-    <div id="aiStatus" style="font-size:13px;margin-bottom:14px;color:#555;"></div>
+    <div id="aiStatus" class="hint"></div>
 
     <button id="saveSettings">Spara inställningar</button>
   </div>
@@ -92,124 +100,110 @@
   <div class="card">
     <h2>Kalenderintegration</h2>
     <label for="calendarUrl">Apple Kalender iCal-länk</label>
-    <input type="url" id="calendarUrl" placeholder="webcal://… eller https://…" />
-    <div style="font-size:12px;color:#888;margin-top:-10px;margin-bottom:10px;">
-      Mac: högerklicka kalender → Hämta info → kopiera länken. Byt "webcal://" mot "https://".
-    </div>
-    <div id="calendarStatus" style="font-size:13px;color:#555;margin-bottom:14px;"></div>
+    <input type="url" id="calendarUrl" placeholder="https://…" />
+    <div class="hint">Mac: högerklicka kalender → Hämta info → kopiera länk. Byt "webcal://" mot "https://".</div>
+    <div id="calendarStatus" class="hint"></div>
     <button id="saveCalendar">Spara kalenderinställning</button>
-    <button id="syncCalendar" style="background:#34c759;margin-top:8px;">Synka nu</button>
+    <button id="syncCalendar" class="btn-green">Synka nu</button>
   </div>
 
   <div class="card">
     <h2>Nästa resa</h2>
     <div id="currentTrip" class="current-trip" style="display:none"></div>
 
-    <div class="trip-section">
-      <label for="departureTime">Avgångstid</label>
-      <input type="datetime-local" id="departureTime" />
+    <label for="departureTime">Avgångstid</label>
+    <input type="datetime-local" id="departureTime" />
 
-      <div class="km-row">
-        <div>
-          <label for="distanceKm">Avstånd (km, enkel väg)</label>
-          <input type="number" id="distanceKm" min="1" max="2000" placeholder="t.ex. 100" />
-        </div>
-        <div>
-          <label for="tripTarget">Mål-batteri (%)</label>
-          <input type="number" id="tripTarget" min="20" max="100" value="80" />
-        </div>
+    <div class="km-row">
+      <div>
+        <label for="distanceKm">Avstånd (km, enkel väg)</label>
+        <input type="number" id="distanceKm" min="1" max="2000" placeholder="t.ex. 470" />
       </div>
-      <div id="calcHint" class="calc-hint"></div>
-
-      <button id="saveTrip">Sätt resa</button>
-      <button id="clearTrip" class="btn-danger">Radera resa</button>
+      <div>
+        <label for="tripTarget">Mål-batteri (%)</label>
+        <input type="number" id="tripTarget" min="20" max="100" value="80" />
+      </div>
     </div>
+    <div id="calcHint" class="calc-hint"></div>
+
+    <button id="saveTrip">Sätt resa</button>
+    <button id="clearTrip" class="btn-red">Radera resa</button>
   </div>
 
-  <div id="status"></div>
+  <div id="flashMsg"></div>
 
   <script>
-    const { HomeyAPI } = window;
-
-    const TIER_LABELS = {
-      VERY_CHEAP: 'Mycket billig',
-      CHEAP: 'Billig',
-      OK: 'OK',
-      EXPENSIVE: 'Dyr',
-    };
-
+    const TIER_LABELS = { VERY_CHEAP: 'Mycket billig', CHEAP: 'Billig', OK: 'OK', EXPENSIVE: 'Dyr' };
     let _carRangeKm = 400;
+    let _homey = null;
 
-    function distanceToTarget(km, rangeKm) {
-      const roundTrip = km * 2;
-      const needed = Math.ceil((roundTrip / rangeKm) * 100) + 15;
-      return Math.min(100, Math.max(20, needed));
+    function flash(msg, isErr) {
+      const el = document.getElementById('flashMsg');
+      el.textContent = msg;
+      el.className = isErr ? 'err' : 'ok';
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 3500);
     }
 
-    function showStatus(msg, isError) {
-      const el = document.getElementById('status');
-      el.textContent = msg;
-      el.className = isError ? 'err' : 'ok';
-      el.style.display = 'block';
-      setTimeout(() => { el.style.display = 'none'; }, 3000);
+    function api(method, path, body) {
+      return new Promise((resolve, reject) => {
+        _homey.api(method, path, body !== undefined ? body : null, (err, result) => {
+          if (err) reject(typeof err === 'string' ? new Error(err) : err);
+          else resolve(result);
+        });
+      });
+    }
+
+    function distanceToTarget(km, rangeKm) {
+      const needed = Math.ceil((km * 2 / rangeKm) * 100) + 15;
+      return Math.min(100, Math.max(20, needed));
     }
 
     function renderTeslaStatus(res) {
       const el = document.getElementById('teslaStatus');
       const ts = res.teslaStatus || {};
-      const carOk = ts.carFound;
-      const batOk = ts.batteryDeviceFound;
-      const fullyConnected = carOk && batOk;
-
-      el.className = 'tesla-status ' + (fullyConnected ? 'connected' : 'disconnected');
+      const ok = ts.carFound && ts.batteryDeviceFound;
+      el.className = 'tesla-status ' + (ok ? 'connected' : 'disconnected');
 
       let html = `
-        <div class="row">
-          <span class="label">${fullyConnected ? '🟢 Tesla ansluten' : '🔴 Tesla ej ansluten'}</span>
+        <div class="ts-row">
+          <span>${ok ? '🟢 Tesla ansluten' : '🔴 Tesla ej ansluten'}</span>
           <span>Batteri: ${res.battery != null ? res.battery + '%' : '–'}</span>
         </div>
-        <div class="row">
-          <span>Bilenhet (measure_battery): ${carOk ? '✓' : '✗ saknas'}</span>
-          <span>Laddningsenhet (charging_on): ${batOk ? '✓' : '✗ saknas'}</span>
+        <div class="ts-row">
+          <span>Bil (measure_battery): ${ts.carFound ? '✓' : '✗'}</span>
+          <span>Laddning (charging_on): ${ts.batteryDeviceFound ? '✓' : '✗'}</span>
         </div>`;
-
-      if (!fullyConnected) {
-        html += `<div style="margin-top:6px;font-size:13px;">
-          Kontrollera loggarna i Homey-appen för att se vilka capabilities Tesla-enheterna exponerar.
-        </div>`;
-      }
 
       const d = res.lastDecision;
       if (d) {
         const tier = d.priceTier || '–';
-        const tierLabel = TIER_LABELS[tier] || tier;
-        const action = d.shouldCharge ? 'Laddar' : 'Laddar inte';
-        const updatedAt = d.updatedAt ? new Date(d.updatedAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '–';
-        html += `<div class="decision">
-          <span class="tier-badge tier-${tier}">${tierLabel}</span>
-          &nbsp;${action} → mål ${d.target}% &nbsp;·&nbsp; batteri ${d.currentBattery}% &nbsp;·&nbsp; ${updatedAt}
+        const upd = d.updatedAt ? new Date(d.updatedAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '–';
+        html += `<div class="ts-decision">
+          <span class="tier-badge tier-${tier}">${TIER_LABELS[tier] || tier}</span>
+          &nbsp;${d.shouldCharge ? 'Laddar' : 'Laddar inte'} → mål ${d.target}% · batteri ${d.currentBattery}% · ${upd}
           <br><span style="font-size:12px;opacity:0.7;">${d.reason || ''}</span>
         </div>`;
       }
-
       el.innerHTML = html;
     }
 
-    async function loadSettings() {
+    async function loadStatus() {
       try {
-        const res = await HomeyAPI.get('/status');
+        const res = await api('GET', '/status');
         const s = res.settings || {};
-        if (s.area) document.getElementById('area').value = s.area;
-        if (s.floor != null) document.getElementById('floor').value = s.floor;
-        if (s.normalTarget != null) document.getElementById('normalTarget').value = s.normalTarget;
-        if (s.chargerKw != null) document.getElementById('chargerKw').value = s.chargerKw;
-        if (s.batteryKwh != null) document.getElementById('batteryKwh').value = s.batteryKwh;
-        if (s.carRangeKm != null) {
-          document.getElementById('carRangeKm').value = s.carRangeKm;
-          _carRangeKm = s.carRangeKm;
-        }
-        if (s.autoCharge != null) document.getElementById('autoCharge').checked = s.autoCharge;
 
+        // Settings fields
+        document.getElementById('area').value = s.area || 'SE3';
+        document.getElementById('floor').value = s.floor ?? 20;
+        document.getElementById('normalTarget').value = s.normalTarget ?? 50;
+        document.getElementById('chargerKw').value = s.chargerKw ?? 11;
+        document.getElementById('batteryKwh').value = s.batteryKwh ?? 82;
+        document.getElementById('carRangeKm').value = s.carRangeKm ?? 400;
+        document.getElementById('autoCharge').checked = !!s.autoCharge;
+        _carRangeKm = s.carRangeKm || 400;
+
+        // AI status
         const aiEl = document.getElementById('aiStatus');
         if (res.aiEnabled) {
           aiEl.textContent = '✓ AI-styrning aktiv';
@@ -219,135 +213,128 @@
           aiEl.style.color = '#92400e';
         }
 
+        // Tesla status block
         renderTeslaStatus(res);
 
-        if (s.calendarUrl) document.getElementById('calendarUrl').value = s.calendarUrl;
-
+        // Calendar status
         const calEl = document.getElementById('calendarStatus');
+        if (s.calendarUrl) document.getElementById('calendarUrl').value = s.calendarUrl;
         const cs = res.calendarSync;
         if (!s.calendarUrl) {
           calEl.textContent = 'Ingen kalender-URL sparad.';
         } else if (cs) {
           const t = cs.syncedAt ? new Date(cs.syncedAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '–';
           if (cs.error) {
-            calEl.textContent = `Senaste sync ${t}: Fel – ${cs.error}`;
+            calEl.textContent = `Senaste sync ${t}: Fel — ${cs.error}`;
             calEl.style.color = '#991b1b';
           } else if (cs.foundTrip) {
-            const { destination, distanceKm, departureTime, confidence } = cs.foundTrip;
-            const dep = new Date(departureTime).toLocaleString('sv-SE', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            calEl.textContent = `Senaste sync ${t}: Hittade resa till ${destination} (${distanceKm} km) — ${dep} [${confidence}]`;
+            const { destination, distanceKm, departureTime } = cs.foundTrip;
+            const dep = new Date(departureTime).toLocaleString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+            calEl.textContent = `Sync ${t}: hittade resa till ${destination} (${distanceKm} km) — ${dep}`;
             calEl.style.color = '#065f46';
           } else {
-            calEl.textContent = `Senaste sync ${t}: Ingen resa hittad`;
+            calEl.textContent = `Sync ${t}: Ingen resa hittad`;
             calEl.style.color = '#555';
           }
         } else {
-          calEl.textContent = 'Aldrig synkat. Klicka "Synka nu" för att testa.';
+          calEl.textContent = 'Aldrig synkat. Tryck "Synka nu" för att testa.';
         }
 
+        // Active trip
         if (res.nextTrip) {
-          const dep = new Date(res.nextTrip.departureTime);
+          const dep = new Date(res.nextTrip.departureTime).toLocaleString('sv-SE');
           const distStr = res.nextTrip.distanceKm ? ` · ${res.nextTrip.distanceKm} km` : '';
-          const el = document.getElementById('currentTrip');
-          el.textContent = `Aktiv resa: ${dep.toLocaleString('sv-SE')} – mål ${res.nextTrip.targetPercent}%${distStr}`;
-          el.style.display = 'block';
+          const tripEl = document.getElementById('currentTrip');
+          tripEl.textContent = `Aktiv resa: ${dep} – mål ${res.nextTrip.targetPercent}%${distStr}`;
+          tripEl.style.display = 'block';
         } else {
           document.getElementById('currentTrip').style.display = 'none';
         }
       } catch (e) {
-        const el = document.getElementById('teslaStatus');
-        el.className = 'tesla-status disconnected';
-        el.textContent = 'Kunde inte hämta status: ' + e.message;
-        showStatus('Kunde inte hämta inställningar: ' + e.message, true);
+        document.getElementById('teslaStatus').className = 'tesla-status disconnected';
+        document.getElementById('teslaStatus').textContent = 'Kunde inte hämta status: ' + e.message;
       }
     }
 
-    // Live-beräkning: km → target %
+    // Live km → target % calculation
     document.getElementById('distanceKm').addEventListener('input', function () {
       const km = Number(this.value);
-      const hint = document.getElementById('calcHint');
-      if (!km || km <= 0) { hint.textContent = ''; return; }
+      const hintEl = document.getElementById('calcHint');
+      if (!km || km <= 0) { hintEl.textContent = ''; return; }
       const target = distanceToTarget(km, _carRangeKm);
       document.getElementById('tripTarget').value = target;
-      hint.textContent = `${km} km tur & retur → beräknat mål: ${target}% (justera manuellt vid behov)`;
+      hintEl.textContent = `${km} km tur & retur → beräknat mål: ${target}% (justera vid behov)`;
+    });
+
+    document.getElementById('saveSettings').addEventListener('click', async () => {
+      const body = {
+        area: document.getElementById('area').value,
+        floor: Number(document.getElementById('floor').value),
+        normalTarget: Number(document.getElementById('normalTarget').value),
+        chargerKw: Number(document.getElementById('chargerKw').value) || 11,
+        batteryKwh: Number(document.getElementById('batteryKwh').value) || 82,
+        carRangeKm: Number(document.getElementById('carRangeKm').value) || 400,
+        autoCharge: document.getElementById('autoCharge').checked,
+      };
+      const key = document.getElementById('apiKey').value.trim();
+      if (key) body.apiKey = key;
+      try {
+        await api('POST', '/settings', body);
+        document.getElementById('apiKey').value = '';
+        flash('Inställningar sparade!', false);
+        loadStatus();
+      } catch (e) { flash('Fel: ' + e.message, true); }
     });
 
     document.getElementById('saveCalendar').addEventListener('click', async () => {
       const url = document.getElementById('calendarUrl').value.trim().replace(/^webcal:\/\//, 'https://');
       try {
-        await HomeyAPI.post('/settings', { calendarUrl: url });
-        showStatus('Kalender sparad!', false);
-        loadSettings();
-      } catch (e) { showStatus('Fel: ' + e.message, true); }
+        await api('POST', '/settings', { calendarUrl: url });
+        flash('Kalenderinställning sparad!', false);
+        loadStatus();
+      } catch (e) { flash('Fel: ' + e.message, true); }
     });
 
     document.getElementById('syncCalendar').addEventListener('click', async () => {
       const url = document.getElementById('calendarUrl').value.trim().replace(/^webcal:\/\//, 'https://');
-      if (!url) { showStatus('Ange en kalender-URL först', true); return; }
+      if (!url) { flash('Ange en kalender-URL först', true); return; }
       try {
-        await HomeyAPI.post('/settings', { calendarUrl: url });
-        await HomeyAPI.post('/calendar/sync', {});
-        showStatus('Synkar kalender…', false);
-        setTimeout(loadSettings, 3000);
-      } catch (e) { showStatus('Fel: ' + e.message, true); }
-    });
-
-    document.getElementById('saveSettings').addEventListener('click', async () => {
-      _carRangeKm = Number(document.getElementById('carRangeKm').value) || 400;
-      const body = {
-        area: document.getElementById('area').value,
-        floor: Number(document.getElementById('floor').value),
-        normalTarget: Number(document.getElementById('normalTarget').value),
-        autoCharge: document.getElementById('autoCharge').checked,
-        chargerKw: Number(document.getElementById('chargerKw').value) || 11,
-        batteryKwh: Number(document.getElementById('batteryKwh').value) || 75,
-        carRangeKm: _carRangeKm,
-      };
-      const apiKeyVal = document.getElementById('apiKey').value.trim();
-      if (apiKeyVal) body.apiKey = apiKeyVal;
-      try {
-        await HomeyAPI.post('/settings', body);
-        document.getElementById('apiKey').value = '';
-        showStatus('Inställningar sparade!', false);
-        loadSettings();
-      } catch (e) {
-        showStatus('Fel: ' + e.message, true);
-      }
+        await api('POST', '/settings', { calendarUrl: url });
+        await api('POST', '/calendar/sync', {});
+        flash('Synkar kalender…', false);
+        setTimeout(loadStatus, 3000);
+      } catch (e) { flash('Fel: ' + e.message, true); }
     });
 
     document.getElementById('saveTrip').addEventListener('click', async () => {
       const departureTime = document.getElementById('departureTime').value;
-      if (!departureTime) { showStatus('Ange avgångstid', true); return; }
-      const kmVal = Number(document.getElementById('distanceKm').value);
+      if (!departureTime) { flash('Ange avgångstid', true); return; }
+      const km = Number(document.getElementById('distanceKm').value);
       const targetPercent = Number(document.getElementById('tripTarget').value);
       const body = { departureTime };
-      if (kmVal > 0) {
-        body.distanceKm = kmVal;
-      } else {
-        body.targetPercent = targetPercent;
-      }
+      if (km > 0) body.distanceKm = km;
+      else body.targetPercent = targetPercent;
       try {
-        await HomeyAPI.post('/trip', body);
-        showStatus('Resa sparad!', false);
+        await api('POST', '/trip', body);
+        flash('Resa sparad!', false);
         document.getElementById('distanceKm').value = '';
         document.getElementById('calcHint').textContent = '';
-        loadSettings();
-      } catch (e) {
-        showStatus('Fel: ' + e.message, true);
-      }
+        loadStatus();
+      } catch (e) { flash('Fel: ' + e.message, true); }
     });
 
     document.getElementById('clearTrip').addEventListener('click', async () => {
       try {
-        await HomeyAPI.delete('/trip');
-        showStatus('Resa raderad', false);
-        loadSettings();
-      } catch (e) {
-        showStatus('Fel: ' + e.message, true);
-      }
+        await api('DELETE', '/trip');
+        flash('Resa raderad', false);
+        loadStatus();
+      } catch (e) { flash('Fel: ' + e.message, true); }
     });
 
-    loadSettings();
+    Homey.ready(function (homey) {
+      _homey = homey;
+      loadStatus();
+    });
   </script>
 </body>
 </html>

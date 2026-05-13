@@ -2,6 +2,7 @@
   "id": "com.filiphammarstrom.teslacharging",
   "version": "1.0.0",
   "compatibility": ">=5.0.0",
+  "brandColor": "#C8102E",
   "sdk": 3,
   "name": {
     "en": "Tesla Smart Charging",
@@ -11,7 +12,6 @@
     "en": "Intelligent Tesla charging based on electricity prices",
     "sv": "Intelligent Tesla-laddning baserat på elpriser"
   },
-  "brandColor": "#1a1a1a",
   "category": "energy",
   "permissions": [
     "homey:manager:api",
@@ -26,12 +26,13 @@
     "email": "filip@filiphammarstrom.se"
   },
   "api": {
-    "getStatus":    { "method": "GET",    "path": "/status"   },
-    "getPrices":    { "method": "GET",    "path": "/prices"   },
-    "postTrip":     { "method": "POST",   "path": "/trip"     },
-    "deleteTrip":   { "method": "DELETE", "path": "/trip"     },
-    "postSettings":     { "method": "POST",   "path": "/settings"       },
-    "postCalendarSync": { "method": "POST",   "path": "/calendar/sync"  }
+    "getStatus":        { "method": "GET",    "path": "/status",         "public": false },
+    "getPrices":        { "method": "GET",    "path": "/prices",         "public": false },
+    "setTrip":          { "method": "POST",   "path": "/trip",           "public": true  },
+    "setTripGet":       { "method": "GET",    "path": "/trip/set",       "public": true  },
+    "deleteTrip":       { "method": "DELETE", "path": "/trip",           "public": true  },
+    "updateSettings":   { "method": "POST",   "path": "/settings",       "public": false },
+    "postCalendarSync": { "method": "POST",   "path": "/calendar/sync",  "public": false }
   },
   "flow": {
     "triggers": [
@@ -73,21 +74,17 @@
           "en": "Set next trip",
           "sv": "Sätt nästa resa"
         },
+        "titleFormatted": {
+          "en": "Set next trip to [[departureTime]] and [[targetPercent]]%",
+          "sv": "Sätt nästa resa till [[departureTime]] och [[targetPercent]]%"
+        },
         "args": [
           {
-            "name": "departureDate",
-            "type": "date",
-            "title": {
-              "en": "Departure date",
-              "sv": "Avgångsdatum"
-            }
-          },
-          {
             "name": "departureTime",
-            "type": "time",
+            "type": "text",
             "title": {
-              "en": "Departure time",
-              "sv": "Avgångstid"
+              "en": "Departure time (ISO 8601)",
+              "sv": "Avgångstid (ISO 8601)"
             }
           },
           {
