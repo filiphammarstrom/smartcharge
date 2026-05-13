@@ -4,8 +4,8 @@ const Homey = require('homey');
 const { HomeyAPI } = require('homey-api');
 const PriceManager = require('./lib/PriceManager');
 const { Scheduler } = require('./lib/Scheduler');
-const AIDecider = require('./lib/AIDecider');
-const CalendarSync = require('./lib/CalendarSync');
+// AIDecider and CalendarSync are lazy-loaded to avoid crashing on startup
+// if @anthropic-ai/sdk is incompatible with this Node.js version.
 
 const DEFAULT_SETTINGS = {
   area: 'SE3',
@@ -109,6 +109,7 @@ class TeslaSmartChargingApp extends Homey.App {
     let decision;
     if (settings.apiKey) {
       try {
+        const AIDecider = require('./lib/AIDecider');
         const ai = new AIDecider({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
         decision = await ai.decide({
           currentBattery,
@@ -381,6 +382,7 @@ class TeslaSmartChargingApp extends Homey.App {
 
     let trip;
     try {
+      const CalendarSync = require('./lib/CalendarSync');
       const sync = new CalendarSync({ apiKey: settings.apiKey, log: this.log.bind(this), error: this.error.bind(this) });
       trip = await sync.sync(settings.calendarUrl);
     } catch (e) {
