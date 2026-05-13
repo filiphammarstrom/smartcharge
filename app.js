@@ -238,17 +238,19 @@ class TeslaSmartChargingApp extends Homey.App {
       this.log('[Debug] homey.apps inspect failed:', e.message);
     }
 
-    // Try every plausible method name
-    for (const method of ['getApp', 'get', 'getApps', 'getInstalledApps']) {
-      if (typeof this.homey.apps[method] === 'function') {
-        this.log(`[Debug] homey.apps.${method} exists — trying it`);
-        try {
-          const result = await this.homey.apps[method]('com.tesla.car');
-          this.log(`[Debug] homey.apps.${method}('com.tesla.car') →`, typeof result, JSON.stringify(result)?.slice(0, 200));
-        } catch (e) {
-          this.log(`[Debug] homey.apps.${method}() failed:`, e.message);
-        }
-      }
+    // Try getInstalled()
+    try {
+      const installed = await this.homey.apps.getInstalled();
+      this.log('[Debug] getInstalled keys:', Object.keys(installed).join(', ').slice(0, 300));
+      const teslaApp = installed['com.tesla.car'];
+      if (!teslaApp) { this.log('[Debug] com.tesla.car not found in installed'); return; }
+      this.log('[Debug] teslaApp type:', typeof teslaApp);
+      const teslaMethods = [];
+      let proto = teslaApp;
+      while (proto) { Object.getOwnPropertyNames(proto).forEach(n => { if (!teslaMethods.includes(n)) teslaMethods.push(n); }); proto = Object.getPrototypeOf(proto); }
+      this.log('[Debug] teslaApp methods:', teslaMethods.filter(n => typeof teslaApp[n] === 'function').sort().join(', '));
+    } catch (e) {
+      this.log('[Debug] getInstalled failed:', e.message);
     }
   }
 
