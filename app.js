@@ -48,7 +48,14 @@ class TeslaSmartChargingApp extends Homey.App {
       const now = new Date();
       if (now.getHours() === 0 && now.getMinutes() < 15) {
         this._priceManager.clearCache();
-        this.log('Price cache cleared');
+        this._aiCache = null;
+        this.log('Price cache cleared (midnight)');
+      }
+      if (now.getHours() === 14 && now.getMinutes() < 15) {
+        this._priceManager.clearCache();
+        this._aiCache = null;
+        this.log('Price cache cleared (new day-ahead prices available)');
+        this._runScheduler().catch(e => this.error('Scheduler error after price refresh:', e));
       }
       if (now.getHours() === 6 && now.getMinutes() < 15) {
         const calUrl = this.homey.settings.get('calendarUrl');
