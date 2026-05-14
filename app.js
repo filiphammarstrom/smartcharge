@@ -166,6 +166,15 @@ class TeslaSmartChargingApp extends Homey.App {
       `target=${decision.target}% → ${decision.shouldCharge ? 'CHARGE' : 'STOP'} (${decision.reason})`
     );
 
+    this._lastDecision = {
+      ...decision,
+      currentBattery,
+      currentPrice: currentSlot ? currentSlot.price : null,
+      priceTier: tier,
+      avg5day,
+      updatedAt: new Date().toISOString(),
+    };
+
     try {
       if (decision.shouldCharge !== this._lastChargeSet) {
         await this._setTeslaCharging(decision.shouldCharge);
@@ -174,7 +183,6 @@ class TeslaSmartChargingApp extends Homey.App {
       }
     } catch (e) {
       this.error('Could not set Tesla charging state:', e.message);
-      return;
     }
 
     if (decision.shouldCharge && this._lastCharging === false) {
@@ -188,14 +196,6 @@ class TeslaSmartChargingApp extends Homey.App {
     }
 
     this._lastCharging = decision.shouldCharge;
-    this._lastDecision = {
-      ...decision,
-      currentBattery,
-      currentPrice: currentSlot ? currentSlot.price : null,
-      priceTier: tier,
-      avg5day,
-      updatedAt: new Date().toISOString(),
-    };
   }
 
   // ---------------------------------------------------------------------------
