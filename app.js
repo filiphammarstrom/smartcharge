@@ -38,6 +38,7 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastChargeSet = null;
     this._lastChargeSetAt = null;
     this._lastCalendarSync = null;
+    this._aiCache = null;
 
     this._registerFlowCards();
     this._restoreTrip();
@@ -115,24 +116,36 @@ class TeslaSmartChargingApp extends Homey.App {
     const apiKey = this.homey.settings.get('anthropicApiKey');
     let decision;
     if (apiKey) {
-      try {
-        const AIDecider = require('./lib/AIDecider');
-        const ai = new AIDecider({ apiKey, log: this.log.bind(this), error: this.error.bind(this) });
-        decision = await ai.decide({
-          currentBattery,
-          floor: settings.floor,
-          normalTarget: settings.normalTarget,
-          nextTrip: this._nextTrip,
-          currentSlot,
-          avg5day,
-          futurePrices,
-          chargerKw: settings.chargerKw,
-          batteryKwh: settings.batteryKwh,
-        });
-        this.log('[AI] decision:', JSON.stringify(decision));
-      } catch (e) {
-        this.error('[AI] failed, falling back to scheduler:', e.message);
-        decision = scheduler.decide();
+      const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : null;
+      const batteryBucket = Math.floor(currentBattery / 5) * 5;
+      const tripKey = this._nextTrip ? this._nextTrip.departureTime.toISOString() : 'none';
+      const cacheKey = `${tier}|${batteryBucket}|${tripKey}`;
+      const useCache = this._aiCache && this._aiCache.key === cacheKey;
+
+      if (useCache) {
+        this.log('[AI] Conditions unchanged, reusing cached decision');
+        decision = this._aiCache.decision;
+      } else {
+        try {
+          const AIDecider = require('./lib/AIDecider');
+          const ai = new AIDecider({ apiKey, log: this.log.bind(this), error: this.error.bind(this) });
+          decision = await ai.decide({
+            currentBattery,
+            floor: settings.floor,
+            normalTarget: settings.normalTarget,
+            nextTrip: this._nextTrip,
+            currentSlot,
+            avg5day,
+            futurePrices,
+            chargerKw: settings.chargerKw,
+            batteryKwh: settings.batteryKwh,
+          });
+          this._aiCache = { key: cacheKey, decision };
+          this.log('[AI] decision:', JSON.stringify(decision));
+        } catch (e) {
+          this.error('[AI] failed, falling back to scheduler:', e.message);
+          decision = scheduler.decide();
+        }
       }
     } else {
       decision = scheduler.decide();
