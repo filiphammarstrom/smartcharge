@@ -38,6 +38,7 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastChargeSet = null;
     this._lastChargeSetAt = null;
     this._lastCalendarSync = null;
+    this._lastCableConnected = null;
     this._aiCache = null;
 
     this._registerFlowCards();
@@ -113,9 +114,14 @@ class TeslaSmartChargingApp extends Homey.App {
       batteryKwh: settings.batteryKwh,
     });
 
+    const currentTarget = this._nextTrip ? this._nextTrip.targetPercent : settings.normalTarget;
+    const cableConnected = this._lastCableConnected !== false; // optimistic default
+    const alreadyAtTarget = currentBattery >= currentTarget;
+    const noPrices = !currentSlot;
+
     const apiKey = this.homey.settings.get('anthropicApiKey');
     let decision;
-    if (apiKey) {
+    if (apiKey && !alreadyAtTarget && cableConnected && !noPrices) {
       const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : null;
       const batteryBucket = Math.floor(currentBattery / 5) * 5;
       const tripKey = this._nextTrip ? this._nextTrip.departureTime.toISOString() : 'none';
@@ -229,9 +235,10 @@ class TeslaSmartChargingApp extends Homey.App {
     const chargingPort = caps.charging_port ? caps.charging_port.value : null;
     const chargingCable = caps.charging_port_cable ? caps.charging_port_cable.value : null;
 
+    this._lastCableConnected = !!(chargingPort || chargingCable);
     this.log(`Charging device: port=${chargingPort}, cable=${chargingCable}`);
 
-    if (enabled && !chargingPort && !chargingCable) {
+    if (enabled && !this._lastCableConnected) {
       this.log('Skipping: cable not connected');
       return;
     }
