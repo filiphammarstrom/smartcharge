@@ -40,6 +40,7 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastCalendarSync = null;
     this._lastCableConnected = null;
     this._lastKnownBattery = null;
+    this._lastKnownBatteryAt = null;
     this._aiCache = null;
 
     this._registerFlowCards();
@@ -90,13 +91,16 @@ class TeslaSmartChargingApp extends Homey.App {
     }
 
     let currentBattery;
+    let batteryStale = false;
     try {
       currentBattery = await this._getTeslaBattery();
       this._lastKnownBattery = currentBattery;
+      this._lastKnownBatteryAt = Date.now();
     } catch (e) {
       if (this._lastKnownBattery != null) {
         this.log(`Could not read Tesla battery (${e.message}), using last known: ${this._lastKnownBattery}%`);
         currentBattery = this._lastKnownBattery;
+        batteryStale = true;
       } else {
         this.error('Could not read Tesla battery (no fallback):', e.message);
         return;
@@ -191,7 +195,28 @@ class TeslaSmartChargingApp extends Homey.App {
 
     try {
       if (decision.shouldCharge !== this._lastChargeSet) {
-        await this._setTeslaCharging(decision.shouldCharge);
+        if (decision.shouldCharge && batteryStale) {
+          // Verify battery before starting charge — car may have charged/discharged since last read
+          try {
+            const freshBattery = await this._getTeslaBattery();
+            this._lastKnownBattery = freshBattery;
+            this._lastKnownBatteryAt = Date.now();
+            const freshTarget = this._nextTrip ? this._nextTrip.targetPercent : settings.normalTarget;
+            if (freshBattery >= freshTarget) {
+              this.log(`Verified battery ${freshBattery}% >= target ${freshTarget}%, skipping charge`);
+              this._lastDecision = { ...this._lastDecision, currentBattery: freshBattery };
+            } else {
+              this.log(`Verified battery ${freshBattery}%, proceeding with charge`);
+              this._lastDecision = { ...this._lastDecision, currentBattery: freshBattery };
+              await this._setTeslaCharging(true);
+            }
+          } catch (e) {
+            this.log(`Could not verify battery before charge (${e.message}), proceeding anyway`);
+            await this._setTeslaCharging(decision.shouldCharge);
+          }
+        } else {
+          await this._setTeslaCharging(decision.shouldCharge);
+        }
       } else {
         this.log(`charging_on unchanged (${decision.shouldCharge}), skipping`);
       }
