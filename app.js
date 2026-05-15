@@ -39,6 +39,7 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastChargeSetAt = null;
     this._lastCalendarSync = null;
     this._lastCableConnected = null;
+    this._lastKnownBattery = null;
     this._aiCache = null;
 
     this._registerFlowCards();
@@ -91,9 +92,15 @@ class TeslaSmartChargingApp extends Homey.App {
     let currentBattery;
     try {
       currentBattery = await this._getTeslaBattery();
+      this._lastKnownBattery = currentBattery;
     } catch (e) {
-      this.error('Could not read Tesla battery:', e.message);
-      return;
+      if (this._lastKnownBattery != null) {
+        this.log(`Could not read Tesla battery (${e.message}), using last known: ${this._lastKnownBattery}%`);
+        currentBattery = this._lastKnownBattery;
+      } else {
+        this.error('Could not read Tesla battery (no fallback):', e.message);
+        return;
+      }
     }
 
     let currentSlot, avg5day, futurePrices;
