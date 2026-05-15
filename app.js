@@ -57,15 +57,11 @@ class TeslaSmartChargingApp extends Homey.App {
         this._priceManager.clearCache();
         this._aiCache = null;
         this.log('Price cache cleared (new day-ahead prices available)');
+        this._autoSyncCalendar();
         this._runScheduler().catch(e => this.error('Scheduler error after price refresh:', e));
       }
       if (now.getHours() === 6 && now.getMinutes() < 15) {
-        const calUrl = this.homey.settings.get('calendarUrl');
-        const apiKey = this.homey.settings.get('anthropicApiKey');
-        if (calUrl && apiKey) {
-          this.log('Auto calendar sync starting');
-          this.syncCalendar().catch(e => this.error('Auto calendar sync failed:', e.message));
-        }
+        this._autoSyncCalendar();
       }
     }, INTERVAL_MS);
 
@@ -404,6 +400,15 @@ class TeslaSmartChargingApp extends Homey.App {
         distanceKm: distanceKm || null,
       },
     };
+  }
+
+  _autoSyncCalendar() {
+    const calUrl = this.homey.settings.get('calendarUrl');
+    const apiKey = this.homey.settings.get('anthropicApiKey');
+    if (calUrl && apiKey) {
+      this.log('Auto calendar sync starting');
+      this.syncCalendar().catch(e => this.error('Auto calendar sync failed:', e.message));
+    }
   }
 
   async syncCalendar() {
