@@ -189,6 +189,18 @@ class TeslaSmartChargingApp extends Homey.App {
       updatedAt: new Date().toISOString(),
     };
 
+    // Rule-based veto: if currently charging and scheduler says stop, always honour it
+    // regardless of cached AI decision (prevents charging continuing through expensive slots)
+    if (decision.shouldCharge && this._lastChargeSet === true) {
+      const schedulerDecision = scheduler.decide();
+      if (!schedulerDecision.shouldCharge) {
+        this.log(`[Veto] Scheduler overrides cached AI decision: stopping charge (${schedulerDecision.reason})`);
+        decision = schedulerDecision;
+        this._lastDecision = { ...this._lastDecision, ...decision, updatedAt: new Date().toISOString() };
+        this._aiCache = null;
+      }
+    }
+
     try {
       if (decision.shouldCharge !== this._lastChargeSet) {
         if (decision.shouldCharge && batteryStale) {
