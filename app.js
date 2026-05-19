@@ -3,7 +3,7 @@
 const Homey = require('homey');
 const { HomeyAPI } = require('homey-api');
 const PriceManager = require('./lib/PriceManager');
-const { Scheduler } = require('./lib/Scheduler');
+const { Scheduler, slotsNeeded } = require('./lib/Scheduler');
 
 const DEFAULT_SETTINGS = {
   area: 'SE3',
@@ -41,7 +41,8 @@ class TeslaSmartChargingApp extends Homey.App {
     this._lastCableConnected = null;
     this._lastKnownBattery = null;
     this._lastKnownBatteryAt = null;
-    this._aiCache = null;
+    this._schedule = null;
+    this._scheduleDirty = false;
 
     this._registerFlowCards();
     this._restoreTrip();
@@ -50,12 +51,12 @@ class TeslaSmartChargingApp extends Homey.App {
       const now = new Date();
       if (now.getHours() === 0 && now.getMinutes() < 15) {
         this._priceManager.clearCache();
-        this._aiCache = null;
+        this._scheduleDirty = true;
         this.log('Price cache cleared (midnight)');
       }
       if (now.getHours() === 14 && now.getMinutes() < 15) {
         this._priceManager.clearCache();
-        this._aiCache = null;
+        this._scheduleDirty = true;
         this.log('Price cache cleared (new day-ahead prices available)');
         this._autoSyncCalendar();
         this._runScheduler().catch(e => this.error('Scheduler error after price refresh:', e));
@@ -128,57 +129,94 @@ class TeslaSmartChargingApp extends Homey.App {
       batteryKwh: settings.batteryKwh,
     });
 
+    const now = new Date();
     const currentTarget = this._nextTrip ? this._nextTrip.targetPercent : settings.normalTarget;
-    const cableConnected = this._lastCableConnected !== false; // optimistic default
-    const alreadyAtTarget = currentBattery >= currentTarget;
-    const noPrices = !currentSlot;
-
+    const batteryBucket = Math.floor(currentBattery / 5) * 5;
+    const tripKey = this._nextTrip ? this._nextTrip.departureTime.toISOString() : 'none';
     const apiKey = this.homey.settings.get('anthropicApiKey');
-    let decision;
-    if (apiKey && !alreadyAtTarget && cableConnected && !noPrices) {
-      const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : null;
-      const batteryBucket = Math.floor(currentBattery / 5) * 5;
-      const tripKey = this._nextTrip ? this._nextTrip.departureTime.toISOString() : 'none';
-      const cacheKey = `${tier}|${batteryBucket}|${tripKey}`;
-      const useCache = this._aiCache && this._aiCache.key === cacheKey;
+    const cableConnected = this._lastCableConnected !== false;
+    const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : 'n/a';
+    const priceStr = currentSlot ? currentSlot.price.toFixed(4) : 'n/a';
 
-      if (useCache) {
-        this.log('[AI] Conditions unchanged, reusing cached decision');
-        decision = this._aiCache.decision;
+    let decision;
+
+    // Emergency: below floor — charge immediately, no schedule needed
+    if (currentBattery < settings.floor) {
+      decision = { shouldCharge: true, target: settings.floor, reason: 'Nödladdning — under golv' };
+
+    // Already at target — nothing to do, clear schedule
+    } else if (currentBattery >= currentTarget) {
+      this._schedule = null;
+      decision = { shouldCharge: false, target: currentTarget, reason: 'Mål uppnått' };
+
+    } else {
+      // Trim expired slots from existing schedule
+      if (this._schedule) {
+        this._schedule.slots = this._schedule.slots.filter(s => s.end > now);
+      }
+
+      const scheduleValid = this._schedule &&
+        !this._scheduleDirty &&
+        this._schedule.forBatteryBucket === batteryBucket &&
+        this._schedule.forTrip === tripKey &&
+        this._schedule.slots.length > 0;
+
+      if (scheduleValid) {
+        const inSlot = this._schedule.slots.some(s => now >= s.start && now < s.end);
+        const next = this._schedule.slots[0];
+        const nextStr = next ? next.start.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm', hour: '2-digit', minute: '2-digit' }) : '–';
+        decision = {
+          shouldCharge: inSlot && cableConnected,
+          target: currentTarget,
+          reason: inSlot ? `Planerat fönster (${this._schedule.slots.length} kvar)` : `Väntar — nästa slot ${nextStr}`,
+          schedule: this._schedule.slots.map(s => s.start.toISOString()),
+        };
+        this.log(`[Schedule] ${inSlot ? 'IN SLOT' : 'waiting'}, ${this._schedule.slots.length} slots left`);
+
       } else {
-        try {
-          const AIDecider = require('./lib/AIDecider');
-          const ai = new AIDecider({ apiKey, log: this.log.bind(this), error: this.error.bind(this) });
-          decision = await ai.decide({
-            currentBattery,
-            floor: settings.floor,
-            normalTarget: settings.normalTarget,
-            nextTrip: this._nextTrip,
-            currentSlot,
-            avg5day,
-            futurePrices,
-            chargerKw: settings.chargerKw,
-            batteryKwh: settings.batteryKwh,
-          });
-          this._aiCache = { key: cacheKey, decision };
-          this.log('[AI] decision:', JSON.stringify(decision));
-        } catch (e) {
-          this.error('[AI] failed, falling back to scheduler:', e.message);
-          decision = scheduler.decide();
+        // Need new plan
+        const n = slotsNeeded(currentBattery, currentTarget, settings.chargerKw, settings.batteryKwh);
+        this.log(`[Plan] Need ${n} slots to reach ${currentTarget}% from ${currentBattery}%`);
+
+        if (apiKey && cableConnected && currentSlot) {
+          try {
+            const AIDecider = require('./lib/AIDecider');
+            const ai = new AIDecider({ apiKey, log: this.log.bind(this), error: this.error.bind(this) });
+            const plan = await ai.plan({
+              currentBattery, floor: settings.floor, normalTarget: settings.normalTarget,
+              nextTrip: this._nextTrip, currentSlot, avg5day, futurePrices,
+              chargerKw: settings.chargerKw, batteryKwh: settings.batteryKwh,
+              slotsNeeded: n,
+            });
+            this._schedule = { slots: plan.slots, forBatteryBucket: batteryBucket, forTrip: tripKey, reason: plan.reason };
+            this._scheduleDirty = false;
+            const inSlot = plan.slots.some(s => now >= s.start && now < s.end);
+            this.log(`[AI] Plan: ${plan.slots.length} slots — ${plan.reason}`);
+            decision = {
+              shouldCharge: inSlot,
+              target: currentTarget,
+              reason: plan.reason,
+              schedule: plan.slots.map(s => s.start.toISOString()),
+            };
+          } catch (e) {
+            this.error('[AI] plan failed, using rule-based fallback:', e.message);
+            const slots = scheduler.planSlots(n);
+            this._schedule = { slots, forBatteryBucket: batteryBucket, forTrip: tripKey, reason: 'Regelbaserad plan' };
+            this._scheduleDirty = false;
+            const inSlot = slots.some(s => now >= s.start && now < s.end);
+            decision = { shouldCharge: inSlot, target: currentTarget, reason: 'Regelbaserad plan', schedule: slots.map(s => s.start.toISOString()) };
+          }
+        } else {
+          const slots = scheduler.planSlots(n);
+          this._schedule = { slots, forBatteryBucket: batteryBucket, forTrip: tripKey, reason: 'Regelbaserad plan' };
+          this._scheduleDirty = false;
+          const inSlot = slots.some(s => now >= s.start && now < s.end);
+          decision = { shouldCharge: inSlot && cableConnected, target: currentTarget, reason: 'Regelbaserad plan', schedule: slots.map(s => s.start.toISOString()) };
         }
       }
-    } else {
-      decision = scheduler.decide();
     }
 
-    const priceStr = currentSlot ? currentSlot.price.toFixed(4) : 'n/a';
-    const avgStr = avg5day ? avg5day.toFixed(4) : 'n/a';
-    const tier = currentSlot ? this._priceManager.classifyPrice(currentSlot.price, avg5day) : 'n/a';
-
-    this.log(
-      `[Scheduler] battery=${currentBattery}% tier=${tier} price=${priceStr} avg=${avgStr} ` +
-      `target=${decision.target}% → ${decision.shouldCharge ? 'CHARGE' : 'STOP'} (${decision.reason})`
-    );
+    this.log(`[Run] battery=${currentBattery}% tier=${tier} price=${priceStr} target=${currentTarget}% → ${decision.shouldCharge ? 'CHARGE' : 'STOP'} (${decision.reason})`);
 
     this._lastDecision = {
       ...decision,
@@ -186,20 +224,8 @@ class TeslaSmartChargingApp extends Homey.App {
       currentPrice: currentSlot ? currentSlot.price : null,
       priceTier: tier,
       avg5day,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now.toISOString(),
     };
-
-    // Rule-based veto: if currently charging and scheduler says stop, always honour it
-    // regardless of cached AI decision (prevents charging continuing through expensive slots)
-    if (decision.shouldCharge && this._lastChargeSet === true) {
-      const schedulerDecision = scheduler.decide();
-      if (!schedulerDecision.shouldCharge) {
-        this.log(`[Veto] Scheduler overrides cached AI decision: stopping charge (${schedulerDecision.reason})`);
-        decision = schedulerDecision;
-        this._lastDecision = { ...this._lastDecision, ...decision, updatedAt: new Date().toISOString() };
-        this._aiCache = null;
-      }
-    }
 
     try {
       if (decision.shouldCharge !== this._lastChargeSet) {
@@ -451,6 +477,8 @@ class TeslaSmartChargingApp extends Homey.App {
 
   async deleteTrip() {
     this._nextTrip = null;
+    this._schedule = null;
+    this._scheduleDirty = false;
     this.homey.settings.set('nextTrip', null);
     this._runScheduler().catch(e => this.error(e));
     return { ok: true };
@@ -481,6 +509,7 @@ class TeslaSmartChargingApp extends Homey.App {
 
   _setTrip(departureTime, targetPercent, distanceKm) {
     this._nextTrip = { departureTime, targetPercent, distanceKm: distanceKm || null };
+    this._scheduleDirty = true;
     this.homey.settings.set('nextTrip', {
       departureTime: departureTime.toISOString(),
       targetPercent,
