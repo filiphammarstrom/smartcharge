@@ -158,6 +158,16 @@ class TeslaSmartChargingApp extends Homey.App {
         this._schedule.slots = this._schedule.slots.filter(s => s.end > now);
       }
 
+      // If a trip is active and we've passed the latest possible start time, force replan
+      if (this._nextTrip && this._schedule) {
+        const n = slotsNeeded(currentBattery, currentTarget, settings.chargerKw, settings.batteryKwh);
+        const latestStart = new Date(this._nextTrip.departureTime.getTime() - n * 15 * 60000);
+        if (now >= latestStart && !this._schedule.slots.some(s => now >= s.start && now < s.end)) {
+          this.log(`[Urgent] Past latest start time ${latestStart.toISOString()}, forcing replan`);
+          this._scheduleDirty = true;
+        }
+      }
+
       const scheduleValid = this._schedule &&
         !this._scheduleDirty &&
         this._schedule.forBatteryBucket === batteryBucket &&
