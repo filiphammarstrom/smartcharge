@@ -130,7 +130,10 @@ class TeslaSmartChargingApp extends Homey.App {
     });
 
     const now = new Date();
-    const currentTarget = this._nextTrip ? this._nextTrip.targetPercent : settings.normalTarget;
+    // Use tier-adjusted target when no trip — lower target when electricity is expensive
+    const currentTarget = this._nextTrip
+      ? this._nextTrip.targetPercent
+      : scheduler.decide().target;
     const batteryBucket = Math.floor(currentBattery / 5) * 5;
     const tripKey = this._nextTrip ? this._nextTrip.departureTime.toISOString() : 'none';
     const apiKey = this.homey.settings.get('anthropicApiKey');
